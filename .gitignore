@@ -1,0 +1,7 @@
+*.pyc
+__pycache__/
+scratchpad/
+.idea/
+env/
+dist/
+*.wav

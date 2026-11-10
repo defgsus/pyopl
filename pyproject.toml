@@ -1,0 +1,20 @@
+[build-system]
+requires = ["scikit-build-core>=0.10"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "pyopl"
+version = "0.0.1"
+description = "Python binding for Nuked OPL3 Yamaha synthesis"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = ["sounddevice>=0.4.6"]
+license = "LGPL-2.0-or-later"
+license-files = ["LICENSE"]
+
+[tool.scikit-build]
+wheel.py-api = "cp39"
+minimum-version = "build-system.requires"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
