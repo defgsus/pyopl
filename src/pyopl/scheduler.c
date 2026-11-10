@@ -175,22 +175,15 @@ event_heap_pop(opl3_scheduler *scheduler)
 /* Scheduler lifecycle                                                 */
 /* ------------------------------------------------------------------ */
 
-int
-opl3_scheduler_init(opl3_scheduler *scheduler, uint32_t sample_rate)
+void opl3_scheduler_init(opl3_scheduler *scheduler)
 {
-    if (scheduler == NULL || sample_rate == 0) {
-        return -1;
-    }
-
     memset(scheduler, 0, sizeof(*scheduler));
 
     atomic_init(&scheduler->commands.head, 0);
     atomic_init(&scheduler->commands.tail, 0);
 
-    OPL3_Reset(&scheduler->chip, sample_rate);
     scheduler->sample_position = 0;
-
-    return 0;
+    atomic_init(&scheduler->sample_position_published, 0);
 }
 
 void
@@ -226,6 +219,15 @@ opl3_scheduler_current_sample(const opl3_scheduler *scheduler)
     return scheduler->sample_position;
 }
 
+uint64_t
+opl3_scheduler_current_sample_published(const opl3_scheduler *scheduler)
+{
+    return atomic_load_explicit(
+        &scheduler->sample_position_published,
+        memory_order_acquire
+    );
+}
+
 /* ------------------------------------------------------------------ */
 /* Rendering                                                           */
 /* ------------------------------------------------------------------ */
@@ -241,7 +243,7 @@ drain_commands(opl3_scheduler *scheduler)
 }
 
 static void
-apply_due_events(opl3_scheduler *scheduler)
+apply_due_events(opl3_scheduler *scheduler, opl3_chip *chip)
 {
     while (scheduler->event_count > 0 &&
            scheduler->events[0].sample <= scheduler->sample_position) {
@@ -259,7 +261,7 @@ apply_due_events(opl3_scheduler *scheduler)
          *     );
          */
         OPL3_WriteReg(
-            &scheduler->chip,
+            chip,
             event.reg,
             event.value
         );
@@ -269,6 +271,7 @@ apply_due_events(opl3_scheduler *scheduler)
 int
 opl3_scheduler_render(
     opl3_scheduler *scheduler,
+    opl3_chip *chip,
     int16_t *output,
     uint32_t frames
 )
@@ -291,7 +294,7 @@ opl3_scheduler_render(
         /* Apply events scheduled at or before the current render position.
            This includes events that arrived late because of control-thread
            or audio-device latency. */
-        apply_due_events(scheduler);
+        apply_due_events(scheduler, chip);
 
         block_start = scheduler->sample_position;
         block_end = block_start + (frames - rendered);
@@ -309,18 +312,25 @@ opl3_scheduler_render(
 
         if (run == 0) {
             /* Multiple events share this exact sample position. */
-            apply_due_events(scheduler);
+            apply_due_events(scheduler, chip);
             continue;
         }
 
         OPL3_GenerateStream(
-            &scheduler->chip,
+            chip,
             output + (rendered * 2),
             run
         );
 
         scheduler->sample_position += run;
         rendered += run;
+
+        /* Publish after each rendered sub-block. */
+        atomic_store_explicit(
+            &scheduler->sample_position_published,
+            scheduler->sample_position,
+            memory_order_release
+        );
     }
 
     return 0;

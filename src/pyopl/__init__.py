@@ -4,3 +4,5 @@ from .util import (
     midi_note_to_frequency,
     midi_note_to_f_number_and_block,
 )
+
+DEFAULT_SAMPLE_RATE = 49716

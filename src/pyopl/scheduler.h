@@ -28,9 +28,7 @@ typedef struct {
 } opl3_command_ring;
 
 typedef struct {
-    opl3_chip chip;
-
-    /* Number of stereo frames already rendered since reset. */
+    /* Number of stereo frames already rendered since reset, owned by audio thread */
     uint64_t sample_position;
 
     /* Min-heap of pending events, owned by the audio thread. */
@@ -38,13 +36,14 @@ typedef struct {
     size_t event_count;
 
     opl3_command_ring commands;
+
+    /* Atomic position published for control threads.
+       Updated by the audio thread, read by Python. */
+    _Atomic uint64_t sample_position_published;
+
 } opl3_scheduler;
 
-int opl3_scheduler_init(
-    opl3_scheduler *scheduler,
-    uint32_t sample_rate
-);
-
+void opl3_scheduler_init(opl3_scheduler *scheduler);
 void opl3_scheduler_deinit(opl3_scheduler *scheduler);
 
 /*
@@ -59,6 +58,10 @@ int opl3_scheduler_schedule_write(
     uint8_t value
 );
 
+/* Thread-safe. Current sample position, published by audio-thread */
+uint64_t opl3_scheduler_current_sample_published(const opl3_scheduler *scheduler);
+
+
 /* Audio-thread only. */
 uint64_t opl3_scheduler_current_sample(const opl3_scheduler *scheduler);
 
@@ -72,6 +75,7 @@ uint64_t opl3_scheduler_current_sample(const opl3_scheduler *scheduler);
  */
 int opl3_scheduler_render(
     opl3_scheduler *scheduler,
+    opl3_chip *chip,
     int16_t *output,
     uint32_t frames
 );
