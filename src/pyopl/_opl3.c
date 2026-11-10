@@ -30,13 +30,22 @@ static PyTypeObject Opl3ChipType;
 /* ------------------------------------------------------------------ */
 
 static int
-parse_register_and_value(PyObject *args, uint16_t *reg, uint8_t *value)
+parse_register_and_value(PyObject *args, PyObject *kwargs, uint16_t *reg, uint8_t *value, uint64_t *sample)
 {
     long reg_long = 0;
     long value_long = 0;
+    unsigned long long sample_long_long = 0;
 
-    if (!PyArg_ParseTuple(args, "ll", &reg_long, &value_long)) {
-        return 0;
+    if (!sample) {
+        static char *kwlist[] = {"reg", "value", NULL};
+        if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|ll", kwlist, &reg_long, &value_long)) {
+            return 0;
+        }
+    } else {
+        static char *kwlist[] = {"reg", "value", "sample", NULL};
+        if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|llK", kwlist, &reg_long, &value_long, &sample_long_long)) {
+            return 0;
+        }
     }
 
     if (reg_long < 0 || reg_long > 0xFFFF) {
@@ -59,6 +68,9 @@ parse_register_and_value(PyObject *args, uint16_t *reg, uint8_t *value)
 
     *reg = (uint16_t)reg_long;
     *value = (uint8_t)value_long;
+    if (sample) {
+        *sample = (uint64_t)sample_long_long;
+    }
     return 1;
 }
 
@@ -161,12 +173,12 @@ Opl3Chip_reset(Opl3ChipObject *self, PyObject *args, PyObject *kwargs)
 }
 
 static PyObject *
-Opl3Chip_write(Opl3ChipObject *self, PyObject *args)
+Opl3Chip_write(Opl3ChipObject *self, PyObject *args, PyObject *kwargs)
 {
     uint16_t reg;
     uint8_t value;
 
-    if (!parse_register_and_value(args, &reg, &value)) {
+    if (!parse_register_and_value(args, kwargs, &reg, &value, NULL)) {
         return NULL;
     }
 
@@ -175,12 +187,12 @@ Opl3Chip_write(Opl3ChipObject *self, PyObject *args)
 }
 
 static PyObject *
-Opl3Chip_write_buffered(Opl3ChipObject *self, PyObject *args)
+Opl3Chip_write_buffered(Opl3ChipObject *self, PyObject *args, PyObject *kwargs)
 {
     uint16_t reg;
     uint8_t value;
 
-    if (!parse_register_and_value(args, &reg, &value)) {
+    if (!parse_register_and_value(args, kwargs, &reg, &value, NULL)) {
         return NULL;
     }
 
@@ -189,31 +201,21 @@ Opl3Chip_write_buffered(Opl3ChipObject *self, PyObject *args)
 }
 
 static PyObject *
-Opl3Chip_schedule_write(Opl3ChipObject *self, PyObject *args)
+Opl3Chip_schedule_write(Opl3ChipObject *self, PyObject *args, PyObject *kwargs)
 {
-    unsigned long long sample;
-    long reg;
-    long value;
+    uint16_t reg;
+    uint8_t value;
+    uint64_t sample = 0;
 
-    if (!PyArg_ParseTuple(args, "Kll", &sample, &reg, &value)) {
-        return NULL;
-    }
-
-    if (reg < 0 || reg > 0xFFFF) {
-        PyErr_SetString(PyExc_ValueError, "register must be in range 0..65535");
-        return NULL;
-    }
-
-    if (value < 0 || value > 0xFF) {
-        PyErr_SetString(PyExc_ValueError, "value must be in range 0..255");
+    if (!parse_register_and_value(args, kwargs, &reg, &value, &sample)) {
         return NULL;
     }
 
     if (opl3_scheduler_schedule_write(
             &self->scheduler,
-            (uint64_t)sample,
-            (uint16_t)reg,
-            (uint8_t)value
+            sample,
+            reg,
+            value
         ) != 0) {
         PyErr_SetString(PyExc_OverflowError, "scheduler command queue is full");
         return NULL;
@@ -425,32 +427,25 @@ static PyMethodDef Opl3Chip_methods[] = {
     {
         "write",
         (PyCFunction)Opl3Chip_write,
-        METH_VARARGS,
+        METH_VARARGS | METH_KEYWORDS,
         "write(reg, value)\n\n"
         "Write an OPL register immediately."
     },
     {
         "write_buffered",
         (PyCFunction)Opl3Chip_write_buffered,
-        METH_VARARGS,
+        METH_VARARGS | METH_KEYWORDS,
         "write_buffered(reg, value)\n\n"
         "Queue an OPL register write for cycle-accurate application during\n"
         "subsequent sample generation."
     },
     {
-        "schedule_write",
+        "write_scheduled",
         (PyCFunction)Opl3Chip_schedule_write,
-        METH_VARARGS,
-        "schedule_write(sample, reg, value)\n\n"
-        "Schedule a register write at an absolute output-sample position."
+        METH_VARARGS | METH_KEYWORDS,
+        "write_scheduled(reg, value, sample)\n\n"
+        "Schedule a register write at an absolute sample position."
     },
-    /*{
-        "current_sample",
-        (PyCFunction)Opl3Chip_current_sample,
-        METH_NOARGS,
-        "current_sample()\n\n"
-        "Return the number of stereo frames rendered since initialization."
-    },*/
     {
         "generate",
         (PyCFunction)Opl3Chip_generate,
@@ -491,12 +486,12 @@ static PyMethodDef Opl3Chip_methods[] = {
 
 static PyTypeObject Opl3ChipType = {
     PyVarObject_HEAD_INIT(NULL, 0)
-    .tp_name = "pyopl3._opl3.OPL3Chip",
+    .tp_name = "pyopl.OPL3Chip",
     .tp_basicsize = sizeof(Opl3ChipObject),
     .tp_itemsize = 0,
     .tp_dealloc = (destructor)Opl3Chip_dealloc,
     .tp_flags = Py_TPFLAGS_DEFAULT,
-    .tp_doc = "An independent Yamaha OPL3 synthesizer instance.",
+    .tp_doc = "A Nuked-OPL3 Chip instance.",
     .tp_methods = Opl3Chip_methods,
     .tp_init = (initproc)Opl3Chip_init,
     .tp_new = Opl3Chip_new,

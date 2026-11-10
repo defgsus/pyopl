@@ -1,5 +1,4 @@
 import unittest
-import wave
 
 from pyopl import *
 
@@ -8,7 +7,7 @@ class TestOPL3(unittest.TestCase):
 
     def test_chip_init(self):
         chip = OPL3Chip()
-        self.assertEqual(49716, chip.sample_rate)
+        self.assertEqual(DEFAULT_SAMPLE_RATE, chip.sample_rate)
         self.assertEqual(True, chip.opl3)
         chip = OPL3Chip(sample_rate=11000)
         self.assertEqual(11000, chip.sample_rate)
@@ -17,15 +16,15 @@ class TestOPL3(unittest.TestCase):
         self.assertEqual(11000, chip.sample_rate)
         self.assertEqual(False, chip.opl3)
         chip = OPL3Chip(opl3=False)
-        self.assertEqual(49716, chip.sample_rate)
+        self.assertEqual(DEFAULT_SAMPLE_RATE, chip.sample_rate)
         self.assertEqual(False, chip.opl3)
 
     def test_chip_reset(self):
         chip = OPL3Chip()
-        self.assertEqual(49716, chip.sample_rate)
+        self.assertEqual(DEFAULT_SAMPLE_RATE, chip.sample_rate)
         self.assertEqual(True, chip.opl3)
         chip.reset()
-        self.assertEqual(49716, chip.sample_rate)
+        self.assertEqual(DEFAULT_SAMPLE_RATE, chip.sample_rate)
         self.assertEqual(True, chip.opl3)
         chip.reset(sample_rate=11000)
         self.assertEqual(11000, chip.sample_rate)
@@ -34,8 +33,55 @@ class TestOPL3(unittest.TestCase):
         self.assertEqual(11000, chip.sample_rate)
         self.assertEqual(False, chip.opl3)
         chip.reset(opl3=False)
-        self.assertEqual(49716, chip.sample_rate)
+        self.assertEqual(DEFAULT_SAMPLE_RATE, chip.sample_rate)
         self.assertEqual(False, chip.opl3)
         chip.reset()
-        self.assertEqual(49716, chip.sample_rate)
+        self.assertEqual(DEFAULT_SAMPLE_RATE, chip.sample_rate)
+        self.assertEqual(True, chip.opl3)
+
+    def test_chip_generate(self):
+        chip = OPL3Chip()
+        self.assertEqual(
+            b"\x00\x00\x00\x00",
+            chip.generate()
+        )
+        self.assertEqual(
+            b"\x00\x00\x00\x00",
+            chip.generate_resampled()
+        )
+
+    def test_chip_write_opl3(self):
+        chip = OPL3Chip()
+        self.assertEqual(True, chip.opl3)
+        chip.write(0x105, 0)
+        self.assertEqual(False, chip.opl3)
+        chip.write(value=1, reg=0x105)
+        self.assertEqual(True, chip.opl3)
+
+    def test_chip_write_opl3_buffered(self):
+        chip = OPL3Chip()
+        self.assertEqual(True, chip.opl3)
+        chip.write_buffered(0x105, 0)
+        self.assertEqual(True, chip.opl3)
+        chip.generate_stream(4)
+        self.assertEqual(False, chip.opl3)
+        chip.write_buffered(value=1, reg=0x105)
+        self.assertEqual(False, chip.opl3)
+        chip.generate_stream(4)
+        self.assertEqual(True, chip.opl3)
+
+    def test_chip_write_opl3_scheduled(self):
+        chip = OPL3Chip()
+        self.assertEqual(True, chip.opl3)
+        chip.write_scheduled(0x105, 0, sample=1000)
+        self.assertEqual(True, chip.opl3)
+        chip.generate_stream(4)
+        self.assertEqual(True, chip.opl3)
+        chip.generate_stream(1000)
+        self.assertEqual(False, chip.opl3)
+        chip.write_scheduled(sample=2000, value=1, reg=0x105)
+        self.assertEqual(False, chip.opl3)
+        chip.generate_stream(4)
+        self.assertEqual(False, chip.opl3)
+        chip.generate_stream(1000)
         self.assertEqual(True, chip.opl3)
