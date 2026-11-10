@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "opl3.h"
+#include "scheduler.h"
 
 #ifndef DEFAULT_SAMPLE_RATE
 #define DEFAULT_SAMPLE_RATE 48000
@@ -14,9 +15,10 @@
 /* Object definition                                                   */
 /* ------------------------------------------------------------------ */
 
+
 typedef struct {
     PyObject_HEAD
-    opl3_chip chip;
+    opl3_scheduler scheduler;
 } Opl3ChipObject;
 
 static PyTypeObject Opl3ChipType;
@@ -62,64 +64,19 @@ parse_register_and_value(PyObject *args, uint16_t *reg, uint8_t *value)
 static PyObject *
 Opl3Chip_new(PyTypeObject *type, PyObject *args, PyObject *kwargs)
 {
-    Opl3ChipObject *self;
-
-    /* tp_new creates the object. It intentionally does not consume or
-       validate constructor arguments; tp_init does that. */
     (void)args;
     (void)kwargs;
 
+    Opl3ChipObject *self;
     self = (Opl3ChipObject *)type->tp_alloc(type, 0);
     if (self == NULL) {
         return NULL;
     }
 
-    /* Start from a deterministic, all-zero state. Opl3Chip_init() will
-       initialize the emulator with the requested sample rate. */
-    memset(&self->chip, 0, sizeof(self->chip));
+    memset(&self->scheduler, 0, sizeof(self->scheduler));
 
     return (PyObject *)self;
 }
-
-/*
-static PyObject *
-Opl3Chip_new(PyTypeObject *type, PyObject *args, PyObject *kwargs)
-{
-    long sample_rate = DEFAULT_SAMPLE_RATE;
-    uint8_t opl3_mode = 1;
-    Opl3ChipObject *self = NULL;
-
-    static char *kwlist[] = {"sample_rate", "opl3", NULL};
-
-    if (!PyArg_ParseTupleAndKeywords(
-            args, kwargs, "|lb:OPL3Chip", kwlist, &sample_rate, &opl3_mode)) {
-        return NULL;
-    }
-
-    if (sample_rate <= 0 || sample_rate > 1000000) {
-        PyErr_Format(
-            PyExc_ValueError,
-            "sample_rate must be in range 1..1000000, got %ld",
-            sample_rate
-        );
-        return NULL;
-    }
-
-    self = (Opl3ChipObject *)type->tp_alloc(type, 0);
-    if (self == NULL) {
-        return NULL;
-    }
-
-    * Initialize the embedded, per-instance OPL3 state. *
-    memset(&self->chip, 0, sizeof(self->chip));
-    OPL3_Reset(&self->chip, (uint32_t)sample_rate);
-    if (opl3_mode) {
-        OPL3_WriteReg(&self->chip, (uint16_t)0x105, (uint8_t)1);
-    }
-
-    return (PyObject *)self;
-}
-*/
 
 static int
 Opl3Chip_init(Opl3ChipObject *self, PyObject *args, PyObject *kwargs)
@@ -143,9 +100,14 @@ Opl3Chip_init(Opl3ChipObject *self, PyObject *args, PyObject *kwargs)
         return -1;
     }
 
-    OPL3_Reset(&self->chip, (uint32_t)sample_rate);
+    if (opl3_scheduler_init(&self->scheduler, (uint32_t)sample_rate) != 0) {
+        PyErr_SetString(PyExc_RuntimeError, "failed to initialize OPL3 scheduler");
+        return -1;
+    }
+
+    OPL3_Reset(&self->scheduler.chip, (uint32_t)sample_rate);
     if (opl3_mode) {
-        OPL3_WriteReg(&self->chip, (uint16_t)0x105, (uint8_t)1);
+        OPL3_WriteReg(&self->scheduler.chip, (uint16_t)0x105, (uint8_t)1);
     }
 
     return 0;
@@ -181,7 +143,7 @@ Opl3Chip_reset(Opl3ChipObject *self, PyObject *args)
         return NULL;
     }
 
-    OPL3_Reset(&self->chip, (uint32_t)sample_rate);
+    OPL3_Reset(&self->scheduler.chip, (uint32_t)sample_rate);
     Py_RETURN_NONE;
 }
 
@@ -195,7 +157,7 @@ Opl3Chip_write(Opl3ChipObject *self, PyObject *args)
         return NULL;
     }
 
-    OPL3_WriteReg(&self->chip, reg, value);
+    OPL3_WriteReg(&self->scheduler.chip, reg, value);
     Py_RETURN_NONE;
 }
 
@@ -209,8 +171,50 @@ Opl3Chip_write_buffered(Opl3ChipObject *self, PyObject *args)
         return NULL;
     }
 
-    OPL3_WriteRegBuffered(&self->chip, reg, value);
+    OPL3_WriteRegBuffered(&self->scheduler.chip, reg, value);
     Py_RETURN_NONE;
+}
+
+static PyObject *
+Opl3Chip_schedule_write(Opl3ChipObject *self, PyObject *args)
+{
+    unsigned long long sample;
+    long reg;
+    long value;
+
+    if (!PyArg_ParseTuple(args, "Kll", &sample, &reg, &value)) {
+        return NULL;
+    }
+
+    if (reg < 0 || reg > 0xFFFF) {
+        PyErr_SetString(PyExc_ValueError, "register must be in range 0..65535");
+        return NULL;
+    }
+
+    if (value < 0 || value > 0xFF) {
+        PyErr_SetString(PyExc_ValueError, "value must be in range 0..255");
+        return NULL;
+    }
+
+    if (opl3_scheduler_schedule_write(
+            &self->scheduler,
+            (uint64_t)sample,
+            (uint16_t)reg,
+            (uint8_t)value
+        ) != 0) {
+        PyErr_SetString(PyExc_OverflowError, "scheduler command queue is full");
+        return NULL;
+    }
+
+    Py_RETURN_NONE;
+}
+
+static PyObject *
+Opl3Chip_current_sample(Opl3ChipObject *self, PyObject *Py_UNUSED(ignored))
+{
+    return PyLong_FromUnsignedLongLong(
+        opl3_scheduler_current_sample(&self->scheduler)
+    );
 }
 
 static PyObject *
@@ -219,7 +223,7 @@ Opl3Chip_generate(Opl3ChipObject *self, PyObject *Py_UNUSED(ignored))
     int16_t samples[2];
     PyObject *result;
 
-    OPL3_Generate(&self->chip, samples);
+    OPL3_Generate(&self->scheduler.chip, samples);
 
     result = PyBytes_FromStringAndSize((const char *)samples, sizeof(samples));
     if (result == NULL) {
@@ -235,7 +239,7 @@ Opl3Chip_generate_resampled(Opl3ChipObject *self, PyObject *Py_UNUSED(ignored))
     int16_t samples[2];
     PyObject *result;
 
-    OPL3_GenerateResampled(&self->chip, samples);
+    OPL3_GenerateResampled(&self->scheduler.chip, samples);
 
     result = PyBytes_FromStringAndSize((const char *)samples, sizeof(samples));
     if (result == NULL) {
@@ -292,7 +296,8 @@ Opl3Chip_generate_stream(Opl3ChipObject *self, PyObject *args)
     frame_count = (uint32_t)frames;
 
     Py_BEGIN_ALLOW_THREADS
-    OPL3_GenerateStream(&self->chip, output, frame_count);
+    opl3_scheduler_render(&self->scheduler, output, frame_count);
+    //OPL3_GenerateStream(&self->chip, output, frame_count);
     Py_END_ALLOW_THREADS
 
     return result;
@@ -357,7 +362,8 @@ Opl3Chip_generate_stream_into(Opl3ChipObject *self, PyObject *args)
     frame_count = (uint32_t)frames;
 
     Py_BEGIN_ALLOW_THREADS
-    OPL3_GenerateStream(&self->chip, output, frame_count);
+    opl3_scheduler_render(&self->scheduler, output, frame_count);
+    //OPL3_GenerateStream(&self->chip, output, frame_count);
     Py_END_ALLOW_THREADS
 
     PyBuffer_Release(&view);
@@ -390,6 +396,20 @@ static PyMethodDef Opl3Chip_methods[] = {
         "write_buffered(reg, value)\n\n"
         "Queue an OPL register write for cycle-accurate application during\n"
         "subsequent sample generation."
+    },
+    {
+        "schedule_write",
+        (PyCFunction)Opl3Chip_schedule_write,
+        METH_VARARGS,
+        "schedule_write(sample, reg, value)\n\n"
+        "Schedule a register write at an absolute output-sample position."
+    },
+    {
+        "current_sample",
+        (PyCFunction)Opl3Chip_current_sample,
+        METH_NOARGS,
+        "current_sample()\n\n"
+        "Return the number of stereo frames rendered since initialization."
     },
     {
         "generate",

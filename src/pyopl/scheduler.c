@@ -1,0 +1,327 @@
+#include "scheduler.h"
+
+#include <string.h>
+
+/* ------------------------------------------------------------------ */
+/* SPSC command ring                                                   */
+/* ------------------------------------------------------------------ */
+
+static int
+command_ring_push(
+    opl3_command_ring *ring,
+    uint64_t sample,
+    uint16_t reg,
+    uint8_t value
+)
+{
+    size_t tail = atomic_load_explicit(&ring->tail, memory_order_relaxed);
+    size_t head = atomic_load_explicit(&ring->head, memory_order_acquire);
+    size_t next_tail = (tail + 1) % OPL3_SCHEDULER_COMMAND_CAPACITY;
+
+    if (next_tail == head) {
+        return -1; /* Full */
+    }
+
+    ring->items[tail].sample = sample;
+    ring->items[tail].reg = reg;
+    ring->items[tail].value = value;
+
+    atomic_store_explicit(&ring->tail, next_tail, memory_order_release);
+    return 0;
+}
+
+static int
+command_ring_pop(opl3_command_ring *ring, opl3_scheduled_event *event)
+{
+    size_t head = atomic_load_explicit(&ring->head, memory_order_relaxed);
+    size_t tail = atomic_load_explicit(&ring->tail, memory_order_acquire);
+
+    if (head == tail) {
+        return 0; /* Empty */
+    }
+
+    *event = ring->items[head];
+    atomic_store_explicit(
+        &ring->head,
+        (head + 1) % OPL3_SCHEDULER_COMMAND_CAPACITY,
+        memory_order_release
+    );
+
+    return 1;
+}
+
+/* ------------------------------------------------------------------ */
+/* Event min-heap                                                      */
+/* ------------------------------------------------------------------ */
+
+static int
+event_less(
+    const opl3_scheduled_event *a,
+    const opl3_scheduled_event *b
+)
+{
+    if (a->sample != b->sample) {
+        return a->sample < b->sample;
+    }
+
+    /* Stable enough ordering for multiple writes at one sample. */
+    if (a->reg != b->reg) {
+        return a->reg < b->reg;
+    }
+
+    return a->value < b->value;
+}
+
+static void
+event_heap_swap(
+    opl3_scheduled_event *a,
+    opl3_scheduled_event *b
+)
+{
+    opl3_scheduled_event temporary = *a;
+    *a = *b;
+    *b = temporary;
+}
+
+static void
+event_heap_push(
+    opl3_scheduler *scheduler,
+    const opl3_scheduled_event *event
+)
+{
+    size_t child;
+    size_t parent;
+
+    if (scheduler->event_count >= OPL3_SCHEDULER_EVENT_CAPACITY) {
+        /* This should be prevented by command-ring capacity checks and
+           application design. Treat it as a non-recoverable error. */
+        return;
+    }
+
+    child = scheduler->event_count++;
+    scheduler->events[child] = *event;
+
+    while (child > 0) {
+        parent = (child - 1) / 2;
+
+        if (!event_less(&scheduler->events[child], &scheduler->events[parent])) {
+            break;
+        }
+
+        event_heap_swap(
+            &scheduler->events[child],
+            &scheduler->events[parent]
+        );
+        child = parent;
+    }
+}
+
+static int
+event_heap_peek(
+    const opl3_scheduler *scheduler,
+    uint64_t *sample
+)
+{
+    if (scheduler->event_count == 0) {
+        return 0;
+    }
+
+    *sample = scheduler->events[0].sample;
+    return 1;
+}
+
+static void
+event_heap_pop(opl3_scheduler *scheduler)
+{
+    size_t parent = 0;
+    size_t child;
+
+    if (scheduler->event_count == 0) {
+        return;
+    }
+
+    scheduler->events[0] = scheduler->events[--scheduler->event_count];
+
+    for (;;) {
+        size_t left = parent * 2 + 1;
+        size_t right = parent * 2 + 2;
+        size_t smallest = parent;
+
+        if (left < scheduler->event_count &&
+            event_less(&scheduler->events[left], &scheduler->events[smallest])) {
+            smallest = left;
+        }
+
+        if (right < scheduler->event_count &&
+            event_less(&scheduler->events[right], &scheduler->events[smallest])) {
+            smallest = right;
+        }
+
+        if (smallest == parent) {
+            break;
+        }
+
+        event_heap_swap(
+            &scheduler->events[parent],
+            &scheduler->events[smallest]
+        );
+        parent = smallest;
+    }
+
+    (void)child;
+}
+
+/* ------------------------------------------------------------------ */
+/* Scheduler lifecycle                                                 */
+/* ------------------------------------------------------------------ */
+
+int
+opl3_scheduler_init(opl3_scheduler *scheduler, uint32_t sample_rate)
+{
+    if (scheduler == NULL || sample_rate == 0) {
+        return -1;
+    }
+
+    memset(scheduler, 0, sizeof(*scheduler));
+
+    atomic_init(&scheduler->commands.head, 0);
+    atomic_init(&scheduler->commands.tail, 0);
+
+    OPL3_Reset(&scheduler->chip, sample_rate);
+    scheduler->sample_position = 0;
+
+    return 0;
+}
+
+void
+opl3_scheduler_deinit(opl3_scheduler *scheduler)
+{
+    /* The scheduler owns no heap-allocated memory. */
+    (void)scheduler;
+}
+
+int
+opl3_scheduler_schedule_write(
+    opl3_scheduler *scheduler,
+    uint64_t sample_position,
+    uint16_t reg,
+    uint8_t value
+)
+{
+    if (scheduler == NULL) {
+        return -1;
+    }
+
+    return command_ring_push(
+        &scheduler->commands,
+        sample_position,
+        reg,
+        value
+    );
+}
+
+uint64_t
+opl3_scheduler_current_sample(const opl3_scheduler *scheduler)
+{
+    return scheduler->sample_position;
+}
+
+/* ------------------------------------------------------------------ */
+/* Rendering                                                           */
+/* ------------------------------------------------------------------ */
+
+static void
+drain_commands(opl3_scheduler *scheduler)
+{
+    opl3_scheduled_event command;
+
+    while (command_ring_pop(&scheduler->commands, &command)) {
+        event_heap_push(scheduler, &command);
+    }
+}
+
+static void
+apply_due_events(opl3_scheduler *scheduler)
+{
+    while (scheduler->event_count > 0 &&
+           scheduler->events[0].sample <= scheduler->sample_position) {
+        opl3_scheduled_event event = scheduler->events[0];
+
+        event_heap_pop(scheduler);
+
+        /*
+         * Immediate application gives sample-exact musical timing.
+         *
+         * To emulate the OPL's small register-write delay instead, use:
+         *
+         *     OPL3_WriteRegBuffered(
+         *         &scheduler->chip, event.reg, event.value
+         *     );
+         */
+        OPL3_WriteReg(
+            &scheduler->chip,
+            event.reg,
+            event.value
+        );
+    }
+}
+
+int
+opl3_scheduler_render(
+    opl3_scheduler *scheduler,
+    int16_t *output,
+    uint32_t frames
+)
+{
+    uint32_t rendered = 0;
+
+    if (scheduler == NULL || output == NULL) {
+        return -1;
+    }
+
+    while (rendered < frames) {
+        uint64_t block_start;
+        uint64_t block_end;
+        uint64_t next_event_sample;
+        uint32_t run;
+        int has_next_event;
+
+        drain_commands(scheduler);
+
+        /* Apply events scheduled at or before the current render position.
+           This includes events that arrived late because of control-thread
+           or audio-device latency. */
+        apply_due_events(scheduler);
+
+        block_start = scheduler->sample_position;
+        block_end = block_start + (frames - rendered);
+
+        has_next_event = event_heap_peek(
+            scheduler,
+            &next_event_sample
+        );
+
+        if (has_next_event && next_event_sample < block_end) {
+            run = (uint32_t)(next_event_sample - block_start);
+        } else {
+            run = frames - rendered;
+        }
+
+        if (run == 0) {
+            /* Multiple events share this exact sample position. */
+            apply_due_events(scheduler);
+            continue;
+        }
+
+        OPL3_GenerateStream(
+            &scheduler->chip,
+            output + (rendered * 2),
+            run
+        );
+
+        scheduler->sample_position += run;
+        rendered += run;
+    }
+
+    return 0;
+}
