@@ -11,8 +11,7 @@
 import textwrap
 import time
 
-from src.pyopl import *
-from pyopl import OPL3Chip
+from pyopl import *
 
 PATTERN1 = """
 x..xx ---
@@ -94,8 +93,6 @@ def main():
     for i in range(2):
         for line in pattern:
             note_on = [c != "." for c in line[:5]]
-
-            #note_on = [n and i == 4 for i, n in enumerate(note_on)]
 
             state.rhythm_on(sample=sample)
             state.rhythm_on(*note_on, sample=sample + 1)
