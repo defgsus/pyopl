@@ -268,7 +268,17 @@ apply_due_events(opl3_scheduler *scheduler, opl3_chip *chip)
     }
 }
 
-int
+void
+opl3_scheduler_advance_current_sample(opl3_scheduler *scheduler, uint32_t frames) {
+    scheduler->sample_position += frames;
+    atomic_store_explicit(
+        &scheduler->sample_position_published,
+        scheduler->sample_position,
+        memory_order_release
+    );
+}
+
+void
 opl3_scheduler_render(
     opl3_scheduler *scheduler,
     opl3_chip *chip,
@@ -277,10 +287,6 @@ opl3_scheduler_render(
 )
 {
     uint32_t rendered = 0;
-
-    if (scheduler == NULL || output == NULL) {
-        return -1;
-    }
 
     while (rendered < frames) {
         uint64_t block_start;
@@ -325,13 +331,10 @@ opl3_scheduler_render(
         scheduler->sample_position += run;
         rendered += run;
 
-        /* Publish after each rendered sub-block. */
         atomic_store_explicit(
             &scheduler->sample_position_published,
             scheduler->sample_position,
             memory_order_release
         );
     }
-
-    return 0;
 }

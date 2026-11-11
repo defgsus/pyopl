@@ -177,12 +177,27 @@ Opl3Chip_write(Opl3ChipObject *self, PyObject *args, PyObject *kwargs)
 {
     uint16_t reg;
     uint8_t value;
+    uint64_t sample = 0;
 
-    if (!parse_register_and_value(args, kwargs, &reg, &value, NULL)) {
+    if (!parse_register_and_value(args, kwargs, &reg, &value, &sample)) {
         return NULL;
     }
 
-    OPL3_WriteReg(&self->chip, reg, value);
+    if (!sample) {
+        OPL3_WriteReg(&self->chip, reg, value);
+    } else {
+        if (opl3_scheduler_schedule_write(
+                &self->scheduler,
+                sample,
+                reg,
+                value
+            ) != 0)
+        {
+            PyErr_SetString(PyExc_OverflowError, "scheduler command queue is full");
+            return NULL;
+        }
+    }
+
     Py_RETURN_NONE;
 }
 
@@ -201,36 +216,13 @@ Opl3Chip_write_buffered(Opl3ChipObject *self, PyObject *args, PyObject *kwargs)
 }
 
 static PyObject *
-Opl3Chip_schedule_write(Opl3ChipObject *self, PyObject *args, PyObject *kwargs)
-{
-    uint16_t reg;
-    uint8_t value;
-    uint64_t sample = 0;
-
-    if (!parse_register_and_value(args, kwargs, &reg, &value, &sample)) {
-        return NULL;
-    }
-
-    if (opl3_scheduler_schedule_write(
-            &self->scheduler,
-            sample,
-            reg,
-            value
-        ) != 0) {
-        PyErr_SetString(PyExc_OverflowError, "scheduler command queue is full");
-        return NULL;
-    }
-
-    Py_RETURN_NONE;
-}
-
-static PyObject *
 Opl3Chip_generate(Opl3ChipObject *self, PyObject *Py_UNUSED(ignored))
 {
     int16_t samples[2];
     PyObject *result;
 
     OPL3_Generate(&self->chip, samples);
+    opl3_scheduler_advance_current_sample(&self->scheduler, 1);
 
     result = PyBytes_FromStringAndSize((const char *)samples, sizeof(samples));
     if (result == NULL) {
@@ -247,6 +239,7 @@ Opl3Chip_generate_resampled(Opl3ChipObject *self, PyObject *Py_UNUSED(ignored))
     PyObject *result;
 
     OPL3_GenerateResampled(&self->chip, samples);
+    opl3_scheduler_advance_current_sample(&self->scheduler, 1);
 
     result = PyBytes_FromStringAndSize((const char *)samples, sizeof(samples));
     if (result == NULL) {
@@ -428,23 +421,18 @@ static PyMethodDef Opl3Chip_methods[] = {
         "write",
         (PyCFunction)Opl3Chip_write,
         METH_VARARGS | METH_KEYWORDS,
-        "write(reg, value)\n\n"
-        "Write an OPL register immediately."
+        "write(reg, value, sample)\n\n"
+        "Write an OPL register.\n"
+        "If sample == 0, write immediately, otherwise schedule the register write to the "
+        "absolute sample positin."
     },
     {
         "write_buffered",
         (PyCFunction)Opl3Chip_write_buffered,
         METH_VARARGS | METH_KEYWORDS,
         "write_buffered(reg, value)\n\n"
-        "Queue an OPL register write for cycle-accurate application during\n"
+        "Queue an OPL register write for cycle-accurate application during "
         "subsequent sample generation."
-    },
-    {
-        "write_scheduled",
-        (PyCFunction)Opl3Chip_schedule_write,
-        METH_VARARGS | METH_KEYWORDS,
-        "write_scheduled(reg, value, sample)\n\n"
-        "Schedule a register write at an absolute sample position."
     },
     {
         "generate",

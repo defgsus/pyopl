@@ -7,13 +7,13 @@ name = "pyopl"
 version = "0.0.1"
 description = "Python binding for Nuked OPL3 Yamaha synthesis"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 dependencies = ["sounddevice>=0.4.6"]
 license = "LGPL-2.0-or-later"
 license-files = ["LICENSE"]
 
 [tool.scikit-build]
-wheel.py-api = "cp39"
+wheel.py-api = "cp311"
 minimum-version = "build-system.requires"
 
 [tool.pytest.ini_options]

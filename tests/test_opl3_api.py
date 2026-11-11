@@ -3,7 +3,7 @@ import unittest
 from pyopl import *
 
 
-class TestOPL3(unittest.TestCase):
+class TestOPL3Api(unittest.TestCase):
 
     def test_chip_init(self):
         chip = OPL3Chip()
@@ -73,15 +73,44 @@ class TestOPL3(unittest.TestCase):
     def test_chip_write_opl3_scheduled(self):
         chip = OPL3Chip()
         self.assertEqual(True, chip.opl3)
-        chip.write_scheduled(0x105, 0, sample=1000)
+        chip.write(0x105, 0, 1000)
         self.assertEqual(True, chip.opl3)
         chip.generate_stream(4)
         self.assertEqual(True, chip.opl3)
         chip.generate_stream(1000)
         self.assertEqual(False, chip.opl3)
-        chip.write_scheduled(sample=2000, value=1, reg=0x105)
+        chip.write(sample=2000, value=1, reg=0x105)
         self.assertEqual(False, chip.opl3)
         chip.generate_stream(4)
         self.assertEqual(False, chip.opl3)
         chip.generate_stream(1000)
         self.assertEqual(True, chip.opl3)
+
+    def test_chip_current_sample_generate(self):
+        chip = OPL3Chip()
+        self.assertEqual(0, chip.current_sample)
+        chip.generate()
+        self.assertEqual(1, chip.current_sample)
+
+    def test_chip_current_sample_generate_resampled(self):
+        chip = OPL3Chip(sample_rate=10000)
+        self.assertEqual(0, chip.current_sample)
+        chip.generate_resampled()
+        self.assertEqual(1, chip.current_sample)
+
+    def test_chip_current_sample_generate_stream(self):
+        chip = OPL3Chip()
+        self.assertEqual(0, chip.current_sample)
+        chip.generate_stream(23)
+        self.assertEqual(23, chip.current_sample)
+        chip.generate_stream(5)
+        self.assertEqual(28, chip.current_sample)
+
+    def test_chip_current_sample_generate_stream_into(self):
+        chip = OPL3Chip()
+        self.assertEqual(0, chip.current_sample)
+        buffer = bytearray(100)
+        chip.generate_stream_into(23, buffer)
+        self.assertEqual(23, chip.current_sample)
+        chip.generate_stream_into(5, buffer)
+        self.assertEqual(28, chip.current_sample)

@@ -65,15 +65,16 @@ uint64_t opl3_scheduler_current_sample_published(const opl3_scheduler *scheduler
 /* Audio-thread only. */
 uint64_t opl3_scheduler_current_sample(const opl3_scheduler *scheduler);
 
+/* Audio-thread only. */
+void opl3_scheduler_advance_current_sample(opl3_scheduler *scheduler, uint32_t frames);
+
 /*
  * Audio-thread only.
  *
  * Renders exactly `frames` stereo frames into `output`.
  * `output` must have room for frames * 2 int16 samples.
- *
- * Returns 0 on success, -1 if an internal invariant fails.
  */
-int opl3_scheduler_render(
+void opl3_scheduler_render(
     opl3_scheduler *scheduler,
     opl3_chip *chip,
     int16_t *output,
