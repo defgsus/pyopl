@@ -1,4 +1,8 @@
-from ._opl3 import OPL3Chip
+try:
+    from ._opl3 import OPL3Chip
+except ImportError:
+    pass
+
 from .util import (
     frequency_to_f_number_and_block,
     midi_note_to_frequency,

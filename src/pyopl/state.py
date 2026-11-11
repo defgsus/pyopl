@@ -149,10 +149,30 @@ class OPL3State:
     def set_opl3(self, enable: bool = True, sample: int = 0):
         self.chip.write(0x105, int(enable), sample=sample)
 
-    def set_rythm_mode(self, enable: bool = True, sample: int = 0):
+    def set_rhythm_mode(self, enable: bool = True, sample: int = 0):
         self.chip.write(
             0xBD,
             0b100000 if enable else 0,
+            sample=sample,
+        )
+
+    def rhythm_on(
+            self,
+            bd: bool = False,
+            sd: bool = False,
+            tt: bool = False,
+            cy: bool = False,
+            hh: bool = False,
+            sample: int = 0,
+    ):
+        self.chip.write(
+            0xBD,
+            0b100000
+            | (int(bd) << 4)
+            | (int(sd) << 3)
+            | (int(tt) << 2)
+            | (int(cy) << 1)
+            | int(hh),
             sample=sample,
         )
 
@@ -179,30 +199,16 @@ class OPL3State:
             sample=sample,
         )
 
-    def midi_note_on(
-            self,
-            channel: int,
-            note: int,
-            sample: int = 0,
-            a4: float = 440.,
-    ):
-        f_number, block = midi_note_to_f_number_and_block(note, a4=a4)
-        self.note_on(
-            channel=channel,
-            f_number=f_number,
-            block=block,
-            sample=sample,
-        )
-
     def note_on(
             self,
             channel: int,
             f_number: int,
             block: int,
+            note_on: bool = True,
             sample: int = 0,
     ):
-        channel_reg = CHANNEL_REGISTERS[channel]
         self._notes[channel] = (f_number, block)
+        channel_reg = CHANNEL_REGISTERS[channel]
         self.chip.write(
             reg=0xA0 + channel_reg,
             value=f_number & 255,
@@ -210,9 +216,28 @@ class OPL3State:
         )
         self.chip.write(
             reg=0xB0 + channel_reg,
-            value=((f_number >> 8) & 3)
-                  | (block << 2)
-                  | 0b100000,
+            value=(
+                ((f_number >> 8) & 3)
+                | (block << 2)
+                | (int(note_on) << 5)
+            ),
+            sample=sample,
+        )
+
+    def midi_note_on(
+            self,
+            channel: int,
+            note: int,
+            note_on: bool = True,
+            a4: float = 440.,
+            sample: int = 0,
+    ):
+        f_number, block = midi_note_to_f_number_and_block(note, a4=a4)
+        self.note_on(
+            channel=channel,
+            f_number=f_number,
+            block=block,
+            note_on=note_on,
             sample=sample,
         )
 

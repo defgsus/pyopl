@@ -12,9 +12,6 @@ def main():
     chip = OPL3Chip(SR)
     state = OPL3State(chip)
 
-    state.set_4_ops()
-    state.set_rythm_mode(False)
-
     operators = [
         Operator(
             decay=3,

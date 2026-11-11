@@ -26,3 +26,4 @@ python -m unittest discover tests/
 - https://gist.github.com/alexxior/4ab75ac60bc248634feaf1afba63b129/79ae6d626abcb21578b5df8b93ee4385c50f3131
 - https://oplx.com/opl3/docs/ymf262.pdf
 - https://www.opl3.com/wp-content/uploads/2019/08/amsc-Programmers-Guide.pdf
+- https://forums.submarine.org.uk/phpBB/viewforum.php?f=9
