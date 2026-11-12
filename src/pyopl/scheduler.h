@@ -9,6 +9,7 @@
 
 #define OPL3_SCHEDULER_EVENT_CAPACITY 16384
 #define OPL3_SCHEDULER_COMMAND_CAPACITY 16384
+#define OPL3_SCHEDULER_CLEAR_REG 0xFFFFu
 
 typedef struct {
     uint64_t sample;
@@ -47,7 +48,7 @@ void opl3_scheduler_init(opl3_scheduler *scheduler);
 void opl3_scheduler_deinit(opl3_scheduler *scheduler);
 
 /*
- * Thread-safe. May be called from Python or any control thread.
+ * Thread-safe.
  *
  * Returns 0 on success, -1 if the command ring is full.
  */
@@ -61,6 +62,14 @@ int opl3_scheduler_schedule_write(
 /* Thread-safe. Current sample position, published by audio-thread */
 uint64_t opl3_scheduler_current_sample_published(const opl3_scheduler *scheduler);
 
+/*
+ * Thread-safe.
+ *
+ * Requests removal of every currently scheduled event. The clear takes
+ * effect on the audio thread in command order: events scheduled before
+ * this call are discarded; events scheduled after it remain.
+ */
+void opl3_scheduler_clear_schedule(opl3_scheduler *scheduler);
 
 /* Audio-thread only. */
 uint64_t opl3_scheduler_current_sample(const opl3_scheduler *scheduler);

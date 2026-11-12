@@ -202,6 +202,13 @@ Opl3Chip_write(Opl3ChipObject *self, PyObject *args, PyObject *kwargs)
 }
 
 static PyObject *
+Opl3Chip_delete_scheduled_writes(Opl3ChipObject *self)
+{
+    opl3_scheduler_clear_schedule(&self->scheduler);
+    Py_RETURN_NONE;
+}
+
+static PyObject *
 Opl3Chip_write_buffered(Opl3ChipObject *self, PyObject *args, PyObject *kwargs)
 {
     uint16_t reg;
@@ -414,8 +421,8 @@ static PyMethodDef Opl3Chip_methods[] = {
         "reset",
         (PyCFunction)Opl3Chip_reset,
         METH_VARARGS | METH_KEYWORDS,
-        "reset(sample_rate)\n\n"
-        "Reset this chip and configure its output sample rate."
+        "reset(sample_rate, opl3)\n\n"
+        "Reset this chip and configure its output sample rate and OPL2/OPL3 mode."
     },
     {
         "write",
@@ -424,7 +431,7 @@ static PyMethodDef Opl3Chip_methods[] = {
         "write(reg, value, sample)\n\n"
         "Write an OPL register.\n"
         "If sample == 0, write immediately, otherwise schedule the register write to the "
-        "absolute sample positin."
+        "absolute sample position."
     },
     {
         "write_buffered",
@@ -433,6 +440,14 @@ static PyMethodDef Opl3Chip_methods[] = {
         "write_buffered(reg, value)\n\n"
         "Queue an OPL register write for cycle-accurate application during "
         "subsequent sample generation."
+    },
+    {
+        "delete_scheduled_writes",
+        (PyCFunction)Opl3Chip_delete_scheduled_writes,
+        METH_NOARGS,
+        "delete_scheduled_writes()\n\n"
+        "Clear all currently scheduled writes.\n"
+        "This removes all write() calls that had sample > 0 from the schedule"
     },
     {
         "generate",

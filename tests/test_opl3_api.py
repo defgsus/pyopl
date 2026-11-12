@@ -86,6 +86,15 @@ class TestOPL3Api(unittest.TestCase):
         chip.generate_stream(1000)
         self.assertEqual(True, chip.opl3)
 
+    def test_chip_write_opl3_scheduled_clear(self):
+        chip = OPL3Chip()
+        self.assertEqual(True, chip.opl3)
+        chip.write(0x105, 0, 1000)
+        self.assertEqual(True, chip.opl3)
+        chip.delete_scheduled_writes()
+        chip.generate_stream(2000)
+        self.assertEqual(True, chip.opl3)
+
     def test_chip_current_sample_generate(self):
         chip = OPL3Chip()
         self.assertEqual(0, chip.current_sample)

@@ -93,8 +93,6 @@ event_heap_push(
     size_t parent;
 
     if (scheduler->event_count >= OPL3_SCHEDULER_EVENT_CAPACITY) {
-        /* This should be prevented by command-ring capacity checks and
-           application design. Treat it as a non-recoverable error. */
         return;
     }
 
@@ -228,6 +226,27 @@ opl3_scheduler_current_sample_published(const opl3_scheduler *scheduler)
     );
 }
 
+void
+opl3_scheduler_clear_schedule(opl3_scheduler *scheduler)
+{
+    command_ring_push(
+        &scheduler->commands,
+        0,                       /* Sample is irrelevant for a clear. */
+        OPL3_SCHEDULER_CLEAR_REG,
+        0
+    );
+}
+
+void
+opl3_scheduler_advance_current_sample(opl3_scheduler *scheduler, uint32_t frames) {
+    scheduler->sample_position += frames;
+    atomic_store_explicit(
+        &scheduler->sample_position_published,
+        scheduler->sample_position,
+        memory_order_release
+    );
+}
+
 /* ------------------------------------------------------------------ */
 /* Rendering                                                           */
 /* ------------------------------------------------------------------ */
@@ -238,6 +257,11 @@ drain_commands(opl3_scheduler *scheduler)
     opl3_scheduled_event command;
 
     while (command_ring_pop(&scheduler->commands, &command)) {
+        if (command.reg == OPL3_SCHEDULER_CLEAR_REG) {
+            scheduler->event_count = 0;
+            continue;
+        }
+
         event_heap_push(scheduler, &command);
     }
 }
@@ -251,31 +275,12 @@ apply_due_events(opl3_scheduler *scheduler, opl3_chip *chip)
 
         event_heap_pop(scheduler);
 
-        /*
-         * Immediate application gives sample-exact musical timing.
-         *
-         * To emulate the OPL's small register-write delay instead, use:
-         *
-         *     OPL3_WriteRegBuffered(
-         *         &scheduler->chip, event.reg, event.value
-         *     );
-         */
         OPL3_WriteReg(
             chip,
             event.reg,
             event.value
         );
     }
-}
-
-void
-opl3_scheduler_advance_current_sample(opl3_scheduler *scheduler, uint32_t frames) {
-    scheduler->sample_position += frames;
-    atomic_store_explicit(
-        &scheduler->sample_position_published,
-        scheduler->sample_position,
-        memory_order_release
-    );
 }
 
 void

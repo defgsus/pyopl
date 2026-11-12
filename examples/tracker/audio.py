@@ -93,7 +93,7 @@ class OPL3Engine:
     def stop(self):
         with self.lock:
             self.playing = False
-            # self.chip.delete_scheduled_writes()
+            self.chip.delete_scheduled_writes()
             self.scheduled_events.clear()
             self.next_event_index = 0
 
@@ -112,7 +112,7 @@ class OPL3Engine:
 
             # Rebuild future events after a pattern edit.
             if self.pattern_dirty:
-                # self.chip.delete_scheduled_writes()
+                self.chip.delete_scheduled_writes()
                 self.scheduled_events.clear()
 
                 # Keep events that have already been rendered.
