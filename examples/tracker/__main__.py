@@ -66,6 +66,7 @@ class TrackerState:
     instruments: dict[str, Instrument]
     channels: dict[str, Channel]
     bpm: int = 140
+    swing: int = 0
 
     def clear_pattern(self, name: str):
         self.patterns[name] = [False] * STEPS
@@ -73,6 +74,7 @@ class TrackerState:
     def to_dict(self) -> dict:
         return {
             "bpm": self.bpm,
+            "swing": self.swing,
             "patterns": self.patterns,
             "instruments": {
                 name: inst.to_dict()
@@ -86,6 +88,7 @@ class TrackerState:
 
     def from_dict(self, data: dict):
         self.bpm = data["bpm"]
+        self.swing = data.get("swing") or 0
         self.patterns = data["patterns"]
         self.instruments = {
             name: Instrument.from_dict(inst)
@@ -502,7 +505,7 @@ class TrackerUI:
             0, 0,
             "OPL3 TRACKER  [s: start/stop] "
             "[F2: save] [F3: load] "
-            "[+/-: BPM] [Tab: view] [q: quit]",
+            "[+-: BPM] [*/: swing] [Tab: view] [q: quit]",
             curses.color_pair(COLOR_HEADER) | curses.A_BOLD,
         )
 
@@ -663,6 +666,7 @@ class TrackerUI:
                 f"Pattern {PATTERN_ROWS[self.pattern_row]} | "
                 f"Step {self.pattern_col + 1:02d}/{STEPS} | "
                 f"BPM {self.state.bpm} | "
+                f"swing {self.state.swing:2} | "
                 f"Space: toggle | "
                 f"s: {'stop ' if self.engine.playing else 'start'} | "
                 f"c: clear row | "
@@ -864,6 +868,12 @@ class TrackerUI:
             if key == ord("-"):
                 self.set_bpm(max(1, self.state.bpm - 1))
                 continue
+
+            if key in (ord("*"),):
+                self.state.swing = min(99, self.state.swing + 1)
+            if key in (ord("/"),):
+                self.state.swing = max(0, self.state.swing - 1)
+
 
             if key == ord("\t"):
                 if self.view == "pattern":

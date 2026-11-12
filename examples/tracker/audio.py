@@ -126,7 +126,10 @@ class OPL3Engine:
             while True:
                 step = self.next_event_index
                 event_sample = (
-                    self.pattern_start_sample + step * step_samples
+                    self.pattern_start_sample
+                    + int(
+                        step + .0 * (step % 4)
+                    ) * step_samples
                 )
 
                 if event_sample >= horizon:
@@ -139,6 +142,10 @@ class OPL3Engine:
                         sample=event_sample,
                         active=active,
                     )
+                )
+
+                event_sample = int(
+                    event_sample + self.tracker_state.swing / 100 * (step % 4) * step_samples
                 )
 
                 self.state.rhythm_on(sample=event_sample)
