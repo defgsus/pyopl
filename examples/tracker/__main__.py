@@ -67,6 +67,9 @@ class TrackerState:
     channels: dict[str, Channel]
     bpm: int = 140
 
+    def clear_pattern(self, name: str):
+        self.patterns[name] = [False] * STEPS
+
     def to_dict(self) -> dict:
         return {
             "bpm": self.bpm,
@@ -197,6 +200,11 @@ class FileDialog:
             4, 4,
             visible.ljust(field_width),
             curses.color_pair(COLOR_DIALOG),
+        )
+        dialog.addstr(
+            4, 4 + self.cursor_position,
+            visible.ljust(field_width)[self.cursor_position],
+            curses.color_pair(COLOR_CURSOR)
         )
 
         cursor_x = 4 + self.cursor_position - visible_start
@@ -387,7 +395,7 @@ class TrackerUI:
 
         self.play_position = 0
         self.set_bpm(self.state.bpm)
-        self.last_saved_filename = "beat.json"
+        self.last_filename = "beat.json"
 
         self.instrument_fields = [
             ("attack", "num", 0, 15),
@@ -406,7 +414,7 @@ class TrackerUI:
             ("feedback", "num", 0, 7),
         ]
 
-        fn = (Path(__file__).resolve().parent / self.last_saved_filename)
+        fn = (Path(__file__).resolve().parent / self.last_filename)
         if fn.exists():
             self.load_state(fn)
 
@@ -415,14 +423,14 @@ class TrackerUI:
             self.stdscr,
             "Save tracker state",
             mode="save",
-            default_filename=self.last_saved_filename,
+            default_filename=self.last_filename,
         )
 
         filename = dialog.show()
 
         if filename is not None:
             self.save_state(filename)
-            self.last_saved_filename = filename.name
+            self.last_filename = filename.name
 
     def open_load_dialog(self):
         dialog = FileDialog(
@@ -435,6 +443,7 @@ class TrackerUI:
 
         if filename is not None:
             self.load_state(filename)
+            self.last_filename = filename.name
 
     def load_state(self, filename: Path):
         self.state.from_dict(json.loads(filename.read_text()))
@@ -656,6 +665,7 @@ class TrackerUI:
                 f"BPM {self.state.bpm} | "
                 f"Space: toggle | "
                 f"s: {'stop ' if self.engine.playing else 'start'} | "
+                f"c: clear row | "
                 f"Tab: instruments"
             )
 
@@ -838,6 +848,10 @@ class TrackerUI:
                 self.open_load_dialog()
                 continue
 
+            if key == ord("c"):
+                self.state.clear_pattern(PATTERN_ROWS[self.pattern_row])
+                self.engine.mark_dirty()
+                continue
 
             if key == ord("s"):
                 self.toggle_transport()
