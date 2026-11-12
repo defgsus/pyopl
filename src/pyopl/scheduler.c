@@ -237,16 +237,6 @@ opl3_scheduler_clear_schedule(opl3_scheduler *scheduler)
     );
 }
 
-void
-opl3_scheduler_advance_current_sample(opl3_scheduler *scheduler, uint32_t frames) {
-    scheduler->sample_position += frames;
-    atomic_store_explicit(
-        &scheduler->sample_position_published,
-        scheduler->sample_position,
-        memory_order_release
-    );
-}
-
 /* ------------------------------------------------------------------ */
 /* Rendering                                                           */
 /* ------------------------------------------------------------------ */

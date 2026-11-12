@@ -88,24 +88,6 @@ class OPL3Chip:
         :param value: The byte value to store in the register
         """
 
-    def generate(self) -> bytes:
-        """
-        Generate one stereo sample pair at the OPL3's native rate.
-
-        Returns 4 bytes containing two little-endian int16 values.
-
-        :return: bytes
-        """
-
-    def generate_resampled(self) -> bytes:
-        """
-        Generate one resampled stereo sample pair.
-
-        Returns 4 bytes containing two little-endian int16 values.
-
-        :return: bytes
-        """
-
     def generate_stream(self, frames: int) -> bytes:
         """
         Render `frames` interleaved stereo int16 frames into a new bytes object.

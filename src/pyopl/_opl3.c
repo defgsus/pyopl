@@ -228,40 +228,6 @@ Opl3Chip_write_buffered(Opl3ChipObject *self, PyObject *args, PyObject *kwargs)
     Py_RETURN_NONE;
 }
 
-static PyObject *
-Opl3Chip_generate(Opl3ChipObject *self, PyObject *Py_UNUSED(ignored))
-{
-    int16_t samples[2];
-    PyObject *result;
-
-    OPL3_Generate(&self->chip, samples);
-    opl3_scheduler_advance_current_sample(&self->scheduler, 1);
-
-    result = PyBytes_FromStringAndSize((const char *)samples, sizeof(samples));
-    if (result == NULL) {
-        return NULL;
-    }
-
-    return result;
-}
-
-static PyObject *
-Opl3Chip_generate_resampled(Opl3ChipObject *self, PyObject *Py_UNUSED(ignored))
-{
-    int16_t samples[2];
-    PyObject *result;
-
-    OPL3_GenerateResampled(&self->chip, samples);
-    opl3_scheduler_advance_current_sample(&self->scheduler, 1);
-
-    result = PyBytes_FromStringAndSize((const char *)samples, sizeof(samples));
-    if (result == NULL) {
-        return NULL;
-    }
-
-    return result;
-}
-
 /*
  * Render `frames` stereo frames into a newly allocated bytes object.
  *
@@ -446,18 +412,6 @@ static PyMethodDef Opl3Chip_methods[] = {
         (PyCFunction)Opl3Chip_delete_scheduled_writes,
         METH_NOARGS,
         "delete_scheduled_writes()\n--\n\nClear all currently scheduled writes.\n\nThis removes all write() calls that had sample > 0 from the schedule"
-    },
-    {
-        "generate",
-        (PyCFunction)Opl3Chip_generate,
-        METH_NOARGS,
-        "generate()\n--\n\nGenerate one stereo sample pair at the OPL3's native rate.\n\nReturns 4 bytes containing two little-endian int16 values.\n\n:return: bytes"
-    },
-    {
-        "generate_resampled",
-        (PyCFunction)Opl3Chip_generate_resampled,
-        METH_NOARGS,
-        "generate_resampled()\n--\n\nGenerate one resampled stereo sample pair.\n\nReturns 4 bytes containing two little-endian int16 values.\n\n:return: bytes"
     },
     {
         "generate_stream",

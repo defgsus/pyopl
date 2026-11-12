@@ -39,15 +39,11 @@ class TestOPL3Api(unittest.TestCase):
         self.assertEqual(DEFAULT_SAMPLE_RATE, chip.sample_rate)
         self.assertEqual(True, chip.opl3)
 
-    def test_chip_generate(self):
+    def test_chip_generate_stream(self):
         chip = OPL3Chip()
         self.assertEqual(
             b"\x00\x00\x00\x00",
-            chip.generate()
-        )
-        self.assertEqual(
-            b"\x00\x00\x00\x00",
-            chip.generate_resampled()
+            chip.generate_stream(1)
         )
 
     def test_chip_write_opl3(self):
@@ -94,18 +90,6 @@ class TestOPL3Api(unittest.TestCase):
         chip.delete_scheduled_writes()
         chip.generate_stream(2000)
         self.assertEqual(True, chip.opl3)
-
-    def test_chip_current_sample_generate(self):
-        chip = OPL3Chip()
-        self.assertEqual(0, chip.current_sample)
-        chip.generate()
-        self.assertEqual(1, chip.current_sample)
-
-    def test_chip_current_sample_generate_resampled(self):
-        chip = OPL3Chip(sample_rate=10000)
-        self.assertEqual(0, chip.current_sample)
-        chip.generate_resampled()
-        self.assertEqual(1, chip.current_sample)
 
     def test_chip_current_sample_generate_stream(self):
         chip = OPL3Chip()
