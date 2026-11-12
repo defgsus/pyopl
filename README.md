@@ -1,9 +1,50 @@
-# Python AdLib/OPL3 library
+# Python OPL3 library
 
-Wrapper around [Nuked OPL3](https://github.com/nukeykt/Nuked-OPL3).
+Low-level wrapper around [Nuked OPL3](https://github.com/nukeykt/Nuked-OPL3) C implementation
+and higher-level utilities to make programming the OPL3 chip fun. 
 
+## Quickstart
 
+OPL3 is a complicated beast. The `OPL3State`, `Channel` and `Operator` classes 
+are supposed to make it easy to get some sounds out of it.
 
+```python
+import time
+from pyopl import *
+
+# low-level wrapper
+chip = OPL3Chip(48000)
+# high-level helper
+state = OPL3State(chip)
+
+# all channel-wide settings can be set with the Channel class
+state.write_channel(0, Channel(fm=True, feedback=3))
+
+# operator settings are stored in Operator classes
+op1 = Operator(freq_multiplier=2, waveform=2, decay=1)
+op2 = Operator(decay=5, release=2, vibrato=True, tremolo=True)
+# Configure the two operators for channel 0
+state.write_operators(0, op1, op2)
+
+# Small wrapper around the sounddevice library to generate
+# the audio stream in the background
+with AudioStream(chip):
+    # play a note on channel 0
+    state.midi_note_on(0, 48)
+    # let it sing a little
+    time.sleep(1.)
+    # clear the note-on bit
+    state.note_off(0)
+    # and let the release envelope do it's thing
+    time.sleep(.5)
+```
+
+## [Examples](examples/)
+
+- [example_play.py](examples/example_play.py): Play two-operator notes on 18 channels.
+- [example_beat.py](examples/example_beat.py): Use the OPL3 rhythm mode and schedule register writes into the future, for accurate timing. 
+- [tracker/](examples/tracker/): A little console tracker for OPL3 rhythms. Allows live editing of patterns and all relevant settings.
+  Run with `python examples/tracker`.
 
 
 ## Development
@@ -26,7 +67,10 @@ python -m unittest discover tests/
 
 ## Resources
 
+Stuff i found useful to understand the OPL3 logic and create the high-level helper classes:
+
 - https://www.asvcorp.ru/darch/docs/sound/opl3/index.html
+  This is **the main document** out there. What would we do without it??
 - https://gist.github.com/alexxior/4ab75ac60bc248634feaf1afba63b129/79ae6d626abcb21578b5df8b93ee4385c50f3131
 - https://oplx.com/opl3/docs/ymf262.pdf
 - https://www.opl3.com/wp-content/uploads/2019/08/amsc-Programmers-Guide.pdf
