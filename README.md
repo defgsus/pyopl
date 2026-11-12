@@ -9,14 +9,18 @@ Wrapper around [Nuked OPL3](https://github.com/nukeykt/Nuked-OPL3).
 ## Development
 
 ```shell
+# create venv and install `build` tool
 python -m venv env
 source env/bin/activate
-
 pip install -U build
+
+# render src/pyopl/_opl3.c with doc-strings from _opl3.pyi file
+python tools/add_doc_strings.py
+# build the package
 python -m build
-
+# install package into venv
 pip install --force-reinstall dist/*.whl
-
+# run the unit-tests
 python -m unittest discover tests/
 ```
 

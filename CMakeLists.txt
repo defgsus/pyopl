@@ -13,7 +13,7 @@ python_add_library(
 )
 
 target_include_directories(_opl3 PRIVATE
-    src/pyopl3
+    src/pyopl
     vendor/nuked-opl3
 )
 
