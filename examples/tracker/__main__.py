@@ -1,21 +1,11 @@
 """
 Minimal OPL3-style tracker UI.
 
-Keys:
-  Arrow keys / hjkl : Move cursor
-  Space             : Toggle drum step (X/.)
-  s                 : Start / stop transport
-  + or =            : Increase BPM
-  -                 : Decrease BPM
-  Tab               : Switch Pattern / Instrument / Channel view
-  0-9               : Enter digits in numeric fields
-  x / X             : Toggle boolean fields
-  Enter             : Commit numeric entry
-  Backspace         : Delete digit
-  q                 : Quit
+Mostly done by perplexity.ai free-tier model
 """
-
+from pathlib import Path
 import curses
+import json
 import time
 from dataclasses import dataclass
 
@@ -23,6 +13,7 @@ from dataclasses import dataclass
 PATTERN_ROWS = ["BD", "SD", "TT", "CY", "HH"]
 INSTRUMENTS = ["BD1", "BD2", "SD", "TT", "CY", "HH"]
 CHANNELS = ["CH1", "CH2", "CH3"]
+CHANNEL_TARGETS = ["BD", "SD + CY + HH", "TT + CY + HH"]
 STEPS = 64
 
 # Color pair IDs
@@ -31,7 +22,8 @@ COLOR_BEAT = 2
 COLOR_CURSOR = 3
 COLOR_HEADER = 4
 COLOR_STATUS = 5
-
+COLOR_DIALOG = 6
+COLOR_DIALOG_TITLE = 7
 
 @dataclass
 class Instrument:
@@ -45,6 +37,13 @@ class Instrument:
     freq_mult: int = 0
     sustain: bool = False
 
+    def to_dict(self) -> dict:
+        return vars(self)
+
+    @classmethod
+    def from_dict(cls, data: dict):
+        return Instrument(**data)
+
 
 @dataclass
 class Channel:
@@ -52,6 +51,13 @@ class Channel:
     midi_note: int = 50
     fm: bool = True
     feedback: int = 0
+
+    def to_dict(self) -> dict:
+        return vars(self)
+
+    @classmethod
+    def from_dict(cls, data: dict):
+        return Channel(**data)
 
 
 @dataclass
@@ -61,6 +67,31 @@ class TrackerState:
     channels: dict[str, Channel]
     bpm: int = 140
 
+    def to_dict(self) -> dict:
+        return {
+            "bpm": self.bpm,
+            "patterns": self.patterns,
+            "instruments": {
+                name: inst.to_dict()
+                for name, inst in self.instruments.items()
+            },
+            "channels": {
+                name: chan.to_dict()
+                for name, chan in self.channels.items()
+            }
+        }
+
+    def from_dict(self, data: dict):
+        self.bpm = data["bpm"]
+        self.patterns = data["patterns"]
+        self.instruments = {
+            name: Instrument.from_dict(inst)
+            for name, inst in data["instruments"].items()
+        }
+        self.channels = {
+            name: Channel.from_dict(chan)
+            for name, chan in data["channels"].items()
+        }
 
 def make_state():
     state = TrackerState(
@@ -76,6 +107,263 @@ def make_state():
         state.patterns["HH"][i] = i % 32 in (0, 2, 30)
 
     return state
+
+
+class FileDialog:
+    """
+    Centered modal file dialog.
+
+    Save mode:
+      - Edit a filename.
+      - Enter confirms.
+      - Escape cancels.
+
+    Load mode:
+      - Lists existing *.json files.
+      - Up/Down selects a file.
+      - Enter confirms.
+      - Escape cancels.
+    """
+
+    def __init__(
+        self,
+        stdscr,
+        title,
+        mode="save",
+        default_filename="beat.json",
+        file_pattern="*.json",
+    ):
+        self.stdscr = stdscr
+        self.title = title
+        self.mode = mode
+        self.default_filename = default_filename
+        self.file_pattern = file_pattern
+
+        self.filename = default_filename
+        self.cursor_position = len(self.filename)
+
+        self.files = []
+        self.selected_index = 0
+        self.list_top = 0
+
+        if mode == "load":
+            self.refresh_files()
+
+    def refresh_files(self):
+        directory = Path(__file__).resolve().parent
+
+        self.files = sorted(
+            path.name
+            for path in directory.glob(self.file_pattern)
+            if path.is_file()
+        )
+
+        self.selected_index = 0
+        self.list_top = 0
+
+    def draw(self, dialog, dialog_height, dialog_width):
+        dialog.erase()
+        dialog.box()
+
+        dialog.addstr(
+            1, 2,
+            self.title,
+            curses.color_pair(COLOR_DIALOG_TITLE) | curses.A_BOLD,
+        )
+
+        if self.mode == "save":
+            self.draw_save_mode(dialog, dialog_width)
+        else:
+            self.draw_load_mode(dialog, dialog_height, dialog_width)
+
+        dialog.refresh()
+
+    def draw_save_mode(self, dialog, dialog_width):
+        field_width = dialog_width - 8
+
+        dialog.addstr(3, 2, "File name:")
+        dialog.addstr(4, 2, ">")
+
+        visible_start = max(
+            0,
+            self.cursor_position - field_width + 1,
+        )
+
+        visible = self.filename[
+            visible_start:visible_start + field_width
+        ]
+
+        dialog.addstr(
+            4, 4,
+            visible.ljust(field_width),
+            curses.color_pair(COLOR_DIALOG),
+        )
+
+        cursor_x = 4 + self.cursor_position - visible_start
+        dialog.move(4, cursor_x)
+
+        dialog.addstr(
+            7,
+            2,
+            "Enter: save   Esc: cancel",
+            curses.A_DIM,
+        )
+
+    def draw_load_mode(self, dialog, dialog_height, dialog_width):
+        list_height = dialog_height - 7
+
+        dialog.addstr(3, 2, "Select a file:")
+
+        if not self.files:
+            dialog.addstr(
+                5, 4,
+                "No files found",
+                curses.A_DIM,
+            )
+        else:
+            visible_count = min(
+                len(self.files),
+                list_height,
+            )
+
+            for display_row in range(visible_count):
+                file_index = self.list_top + display_row
+                filename = self.files[file_index]
+
+                attr = curses.A_NORMAL
+
+                if file_index == self.selected_index:
+                    attr = (
+                        curses.color_pair(COLOR_CURSOR)
+                        | curses.A_BOLD
+                    )
+
+                # Leave room for the dialog border.
+                filename = filename[:dialog_width - 6]
+
+                dialog.addstr(
+                    5 + display_row,
+                    4,
+                    filename.ljust(dialog_width - 6),
+                    attr,
+                )
+
+        dialog.addstr(
+            dialog_height - 2,
+            2,
+            "Up/Down: select   Enter: load   Esc: cancel",
+            curses.A_DIM,
+        )
+
+    def handle_save_key(self, key):
+        if key in (curses.KEY_BACKSPACE, 127, 8):
+            if self.cursor_position > 0:
+                self.filename = (
+                    self.filename[:self.cursor_position - 1]
+                    + self.filename[self.cursor_position:]
+                )
+                self.cursor_position -= 1
+
+        elif key == curses.KEY_LEFT:
+            self.cursor_position = max(0, self.cursor_position - 1)
+
+        elif key == curses.KEY_RIGHT:
+            self.cursor_position = min(
+                len(self.filename),
+                self.cursor_position + 1,
+            )
+
+        elif key == curses.KEY_HOME:
+            self.cursor_position = 0
+
+        elif key == curses.KEY_END:
+            self.cursor_position = len(self.filename)
+
+        elif 32 <= key <= 126:
+            character = chr(key)
+
+            self.filename = (
+                self.filename[:self.cursor_position]
+                + character
+                + self.filename[self.cursor_position:]
+            )
+            self.cursor_position += 1
+
+    def handle_load_key(self, key, dialog_height):
+        if not self.files:
+            return
+
+        visible_count = dialog_height - 7
+
+        if key in (curses.KEY_UP, ord("k")):
+            self.selected_index = (
+                self.selected_index - 1
+            ) % len(self.files)
+
+        elif key in (curses.KEY_DOWN, ord("j")):
+            self.selected_index = (
+                self.selected_index + 1
+            ) % len(self.files)
+
+        elif key == curses.KEY_HOME:
+            self.selected_index = 0
+
+        elif key == curses.KEY_END:
+            self.selected_index = len(self.files) - 1
+
+        # Keep the selected item visible.
+        if self.selected_index < self.list_top:
+            self.list_top = self.selected_index
+        elif self.selected_index >= self.list_top + visible_count:
+            self.list_top = (
+                self.selected_index - visible_count + 1
+            )
+
+    def show(self) -> Path | None:
+        height, width = self.stdscr.getmaxyx()
+
+        if self.mode == "load":
+            dialog_height = min(18, height - 4)
+        else:
+            dialog_height = 9
+
+        dialog_width = min(64, width - 4)
+
+        begin_y = max(0, (height - dialog_height) // 2)
+        begin_x = max(0, (width - dialog_width) // 2)
+
+        dialog = curses.newwin(
+            dialog_height,
+            dialog_width,
+            begin_y,
+            begin_x,
+        )
+
+        dialog.keypad(True)
+
+        while True:
+            self.draw(dialog, dialog_height, dialog_width)
+            key = dialog.getch()
+
+            if key in (27, curses.KEY_CANCEL):
+                return None
+
+            if key in (curses.KEY_ENTER, 10, 13):
+                if self.mode == "save":
+                    filename = self.filename.strip()
+
+                    if filename:
+                        return Path(__file__).resolve().parent / filename
+
+                elif self.files:
+                    return Path(__file__).resolve().parent / self.files[self.selected_index]
+
+                continue
+
+            if self.mode == "save":
+                self.handle_save_key(key)
+            else:
+                self.handle_load_key(key, dialog_height)
 
 
 class TrackerUI:
@@ -99,6 +387,7 @@ class TrackerUI:
 
         self.play_position = 0
         self.set_bpm(self.state.bpm)
+        self.last_saved_filename = "beat.json"
 
         self.instrument_fields = [
             ("attack", "num", 0, 15),
@@ -116,6 +405,45 @@ class TrackerUI:
             ("fm", "bool", None, None),
             ("feedback", "num", 0, 7),
         ]
+
+        fn = (Path(__file__).resolve().parent / self.last_saved_filename)
+        if fn.exists():
+            self.load_state(fn)
+
+    def open_save_dialog(self):
+        dialog = FileDialog(
+            self.stdscr,
+            "Save tracker state",
+            mode="save",
+            default_filename=self.last_saved_filename,
+        )
+
+        filename = dialog.show()
+
+        if filename is not None:
+            self.save_state(filename)
+            self.last_saved_filename = filename.name
+
+    def open_load_dialog(self):
+        dialog = FileDialog(
+            self.stdscr,
+            "Load tracker state",
+            mode="load",
+        )
+
+        filename = dialog.show()
+
+        if filename is not None:
+            self.load_state(filename)
+
+    def load_state(self, filename: Path):
+        self.state.from_dict(json.loads(filename.read_text()))
+        self.engine.setup_rhythm_channels()
+        self.engine.setup_rhythm_instruments()
+        self.engine.mark_dirty()
+
+    def save_state(self, filename: Path):
+        filename.write_text(json.dumps(self.state.to_dict()))
 
     def set_bpm(self, bpm: int):
         self.state.bpm = bpm
@@ -163,8 +491,9 @@ class TrackerUI:
 
         self.stdscr.addstr(
             0, 0,
-            "OPL3 TRACKER  [s: start/stop]  "
-            "[+/-: BPM]  [Tab: view]  [q: quit]",
+            "OPL3 TRACKER  [s: start/stop] "
+            "[F2: save] [F3: load] "
+            "[+/-: BPM] [Tab: view] [q: quit]",
             curses.color_pair(COLOR_HEADER) | curses.A_BOLD,
         )
 
@@ -275,7 +604,7 @@ class TrackerUI:
 
         self.stdscr.addstr(
             3, 0,
-            f"Channel: {channel.name}",
+            f"Channel: {channel.name} -> {CHANNEL_TARGETS[self.channel_index]}",
             curses.color_pair(COLOR_HEADER) | curses.A_BOLD,
             )
 
@@ -499,6 +828,17 @@ class TrackerUI:
                 self.engine.stop()
                 return
 
+            if key == curses.KEY_F2:
+                self.stdscr.nodelay(False)
+                self.open_save_dialog()
+                continue
+
+            if key == curses.KEY_F3:
+                self.stdscr.nodelay(False)
+                self.open_load_dialog()
+                continue
+
+
             if key == ord("s"):
                 self.toggle_transport()
                 continue
@@ -545,6 +885,8 @@ def init_colors():
     curses.init_pair(COLOR_CURSOR, curses.COLOR_BLACK, curses.COLOR_CYAN)
     curses.init_pair(COLOR_HEADER, curses.COLOR_BLUE, -1)
     curses.init_pair(COLOR_STATUS, curses.COLOR_BLACK, curses.COLOR_CYAN)
+    curses.init_pair(COLOR_DIALOG, curses.COLOR_WHITE, curses.COLOR_BLUE)
+    curses.init_pair(COLOR_DIALOG_TITLE, curses.COLOR_YELLOW, curses.COLOR_BLUE)
 
 
 def main(stdscr):
