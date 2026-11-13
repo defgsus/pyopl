@@ -1,4 +1,6 @@
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 
 from pyopl import *
 
@@ -38,6 +40,26 @@ class TestOPL3Api(unittest.TestCase):
         chip.reset()
         self.assertEqual(DEFAULT_SAMPLE_RATE, chip.sample_rate)
         self.assertEqual(True, chip.opl3)
+
+    def test_chip_doc_strings(self):
+        # Check for attribution
+        self.assertIn(
+            "https://github.com/nukeykt/Nuked-OPL3",
+            OPL3Chip.__doc__,
+        )
+        # Check for __init__ signature
+        self.assertIn(
+            "__init__(sample_rate: int = 49716, opl3: bool = True)",
+            OPL3Chip.__doc__,
+        )
+        # Check if special abs.collections.Buffer type is correctly parsed
+        buf = StringIO()
+        with redirect_stdout(buf):
+            help(OPL3Chip.generate_stream_into)
+        self.assertIn(
+            "generate_stream_into(frames: int, buffer: Buffer)",
+            buf.getvalue(),
+        )
 
     def test_chip_generate_stream(self):
         chip = OPL3Chip()

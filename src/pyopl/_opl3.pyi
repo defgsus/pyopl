@@ -1,3 +1,7 @@
+try:
+    from collections.abc import Buffer
+except ImportError:
+    Buffer = bytearray
 
 
 class OPL3Chip:
@@ -97,17 +101,24 @@ class OPL3Chip:
         :return: bytes
         """
 
-    def generate_stream_into(self, frames: int, buffer: bytearray) -> None:
+    def generate_stream_into(self, frames: int, buffer: Buffer) -> None:
         """
         Render `frames` interleaved stereo int16 frames into a writable,
         C-contiguous buffer. The buffer must contain at least frames * 4 bytes.
 
         Example:
+
             buffer = bytearray(frames * 4)
             chip.generate_stream_into(frames, buffer)
 
+            # rendering into numpy array
+            a = np.zeros(frames * 2, dtype=np.int16)
+            chip.generate_stream_into(frames, a.data)
+            a_left = a[::2]
+            a_right = a[1::2]
+
         :param frames: Number of samples to produce
-        :param buffer: A writeable, C-contiguous buffer of size of at least frames * 4
+        :param buffer: A writeable, C-contiguous buffer of size of at least frames * 4 bytes
         """
 
     def delete_scheduled_writes(self) -> None:

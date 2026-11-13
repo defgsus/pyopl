@@ -429,7 +429,7 @@ static PyMethodDef Opl3Chip_methods[] = {
         "generate_stream_into",
         (PyCFunction)Opl3Chip_generate_stream_into,
         METH_VARARGS,
-        "generate_stream_into(frames: int, buffer: bytearray)\n--\n\nRender `frames` interleaved stereo int16 frames into a writable,\nC-contiguous buffer. The buffer must contain at least frames * 4 bytes.\n\nExample:\n    buffer = bytearray(frames * 4)\n    chip.generate_stream_into(frames, buffer)\n\n:param frames: Number of samples to produce\n:param buffer: A writeable, C-contiguous buffer of size of at least frames * 4"
+        "generate_stream_into(frames: int, buffer: Buffer)\n--\n\nRender `frames` interleaved stereo int16 frames into a writable,\nC-contiguous buffer. The buffer must contain at least frames * 4 bytes.\n\nExample:\n\n    buffer = bytearray(frames * 4)\n    chip.generate_stream_into(frames, buffer)\n\n    # rendering into numpy array\n    a = np.zeros(frames * 2, dtype=np.int16)\n    chip.generate_stream_into(frames, a.data)\n    a_left = a[::2]\n    a_right = a[1::2]\n\n:param frames: Number of samples to produce\n:param buffer: A writeable, C-contiguous buffer of size of at least frames * 4 bytes"
     },
     {NULL, NULL, 0, NULL}
 };
