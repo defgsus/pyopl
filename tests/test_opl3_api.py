@@ -57,7 +57,7 @@ class TestOPL3Api(unittest.TestCase):
         with redirect_stdout(buf):
             help(OPL3Chip.generate_stream_into)
         self.assertIn(
-            "generate_stream_into(frames: int, buffer: Buffer)",
+            "generate_stream_into(frames: int, buffer: Buffer, do_add: bool = False)",
             buf.getvalue(),
         )
 

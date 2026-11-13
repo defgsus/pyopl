@@ -84,7 +84,8 @@ void opl3_scheduler_render(
     opl3_scheduler *scheduler,
     opl3_chip *chip,
     int16_t *output,
-    uint32_t frames
+    uint32_t frames,
+    uint8_t do_add
 );
 
 #endif

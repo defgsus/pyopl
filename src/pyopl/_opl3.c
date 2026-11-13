@@ -36,7 +36,9 @@ static PyTypeObject Opl3ChipType;
 /* ------------------------------------------------------------------ */
 
 static int
-parse_register_and_value(PyObject *args, PyObject *kwargs, uint16_t *reg, uint8_t *value, uint64_t *sample)
+parse_register_and_value(
+    PyObject *args, PyObject *kwargs, uint16_t *reg, uint8_t *value, uint64_t *sample
+)
 {
     long reg_long = 0;
     long value_long = 0;
@@ -277,7 +279,7 @@ Opl3Chip_generate_stream(Opl3ChipObject *self, PyObject *args)
     frame_count = (uint32_t)frames;
 
     Py_BEGIN_ALLOW_THREADS
-    opl3_scheduler_render(&self->scheduler, &self->chip, output, frame_count);
+    opl3_scheduler_render(&self->scheduler, &self->chip, output, frame_count, 0);
     //OPL3_GenerateStream(&self->chip, output, frame_count);
     Py_END_ALLOW_THREADS
 
@@ -293,17 +295,20 @@ Opl3Chip_generate_stream(Opl3ChipObject *self, PyObject *args)
  *     chip.generate_stream_into(frames, buffer)
  */
 static PyObject *
-Opl3Chip_generate_stream_into(Opl3ChipObject *self, PyObject *args)
+Opl3Chip_generate_stream_into(Opl3ChipObject *self, PyObject *args, PyObject *kwargs)
 {
     Py_ssize_t frames = 0;
     PyObject *buffer_object = NULL;
+    uint8_t do_add = 0;
     Py_buffer view;
     int16_t *output;
     uint32_t frame_count;
     Py_ssize_t required_bytes;
 
-    if (!PyArg_ParseTuple(
-            args, "nO:generate_stream_into", &frames, &buffer_object)) {
+    static char *kwlist[] = {"frames", "buffer", "do_add", NULL};
+
+    if (!PyArg_ParseTupleAndKeywords(
+            args, kwargs, "|nOb:generate_stream_into", kwlist, &frames, &buffer_object, &do_add)) {
         return NULL;
     }
 
@@ -343,7 +348,7 @@ Opl3Chip_generate_stream_into(Opl3ChipObject *self, PyObject *args)
     frame_count = (uint32_t)frames;
 
     Py_BEGIN_ALLOW_THREADS
-    opl3_scheduler_render(&self->scheduler, &self->chip, output, frame_count);
+    opl3_scheduler_render(&self->scheduler, &self->chip, output, frame_count, do_add);
     //OPL3_GenerateStream(&self->chip, output, frame_count);
     Py_END_ALLOW_THREADS
 
@@ -428,8 +433,8 @@ static PyMethodDef Opl3Chip_methods[] = {
     {
         "generate_stream_into",
         (PyCFunction)Opl3Chip_generate_stream_into,
-        METH_VARARGS,
-        "generate_stream_into(frames: int, buffer: Buffer)\n--\n\nRender `frames` interleaved stereo int16 frames into a writable,\nC-contiguous buffer. The buffer must contain at least frames * 4 bytes.\n\nExample:\n\n    buffer = bytearray(frames * 4)\n    chip.generate_stream_into(frames, buffer)\n\n    # rendering into numpy array\n    a = np.zeros(frames * 2, dtype=np.int16)\n    chip.generate_stream_into(frames, a.data)\n    a_left = a[::2]\n    a_right = a[1::2]\n\n:param frames: Number of samples to produce\n:param buffer: A writeable, C-contiguous buffer of size of at least frames * 4 bytes"
+        METH_VARARGS | METH_KEYWORDS,
+        "generate_stream_into(frames: int, buffer: Buffer, do_add: bool = False)\n--\n\nRender `frames` interleaved stereo int16 frames into a writable,\nC-contiguous buffer. The buffer must contain at least frames * 4 bytes.\n\nExample:\n\n    buffer = bytearray(frames * 4)\n    chip.generate_stream_into(frames, buffer)\n\n    # rendering into numpy array\n    a = np.zeros(frames * 2, dtype=np.int16)\n    chip.generate_stream_into(frames, a.data)\n    # get individual channels\n    a_left = a[::2]\n    a_right = a[1::2]\n\n:param frames: Number of samples to produce\n:param buffer: A writeable, C-contiguous buffer of size of at least frames * 4 bytes\n:param do_add: If True, add to buffer instead of replacing values.\n    The addtion is done in signed 32-bit integers, then clipped and\n    converted back to 16-bit.\n:raises ValueError: if buffer is too small\n:raises OverflowError: if render size is too large"
     },
     {NULL, NULL, 0, NULL}
 };

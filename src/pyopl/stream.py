@@ -32,22 +32,27 @@ class AudioStream:
     """
     def __init__(
             self,
-            chip: OPL3Chip,
+            *chip: OPL3Chip,
             blocksize: int = 2048,
             **kwargs,
     ):
         """
         Create new instance.
 
-        The audio stream will be using the OPL3Chip's configured sample-rate
-        to render audio to a sound device.
+        The audio stream will be using the OPL3Chip's configured sample rate
+        to specify the rate of the audio device connection.
 
-        :param chip: OPL3Chip to render
+        :param chip: one or more OPL3Chip instances to render
+            The sample rate for the audio connection will be determined from the first chip.
+            The mixing of each chip after the first is done in signed 32-bit integers
+            and then clipped and converted back to 16-bit.
         :param blocksize: int, the size of one block.
             Increase the size, if audio playback is dropping
         :param kwargs: optional arguments passed to `sounddevice.RawOutputStream`
         """
-        self.chip = chip
+        if not chip:
+            raise ValueError(f"Expected at least one OPL3Chip, got none")
+        self.chips = chip
         self.blocksize = blocksize
         self.stream: sounddevice.RawOutputStream | None = None
         self._device_kwargs = kwargs
@@ -60,7 +65,7 @@ class AudioStream:
         """
         if not self.stream:
             self.stream = sounddevice.RawOutputStream(
-                samplerate=self.chip.sample_rate,
+                samplerate=self.chips[0].sample_rate,
                 channels=2,
                 dtype="int16",
                 callback=self._callback,
@@ -93,5 +98,5 @@ class AudioStream:
         self.stop()
 
     def _callback(self, outdata, frames, time_info, status):
-        self.chip.generate_stream_into(frames, outdata)
-
+        for i, chip in enumerate(self.chips):
+            chip.generate_stream_into(frames, outdata, do_add=i > 0)

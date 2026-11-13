@@ -273,12 +273,40 @@ apply_due_events(opl3_scheduler *scheduler, opl3_chip *chip)
     }
 }
 
+static int16_t OPL3_ClipSample(int32_t sample)
+{
+    if (sample > 32767)
+    {
+        sample = 32767;
+    }
+    else if (sample < -32768)
+    {
+        sample = -32768;
+    }
+    return (int16_t)sample;
+}
+
+void OPL3_GenerateStreamAdd(opl3_chip *chip, int16_t *sndptr, uint32_t numsamples)
+{
+    int16_t samples[4];
+    uint_fast32_t i;
+
+    for(i = 0; i < numsamples; i++)
+    {
+        OPL3_Generate4ChResampled(chip, samples);
+        sndptr[0] = OPL3_ClipSample((uint32_t)sndptr[0] + (uint32_t)samples[0]);
+        sndptr[1] = OPL3_ClipSample((uint32_t)sndptr[1] + (uint32_t)samples[1]);
+        sndptr += 2;
+    }
+}
+
 void
 opl3_scheduler_render(
     opl3_scheduler *scheduler,
     opl3_chip *chip,
     int16_t *output,
-    uint32_t frames
+    uint32_t frames,
+    uint8_t do_add
 )
 {
     uint32_t rendered = 0;
@@ -317,11 +345,11 @@ opl3_scheduler_render(
             continue;
         }
 
-        OPL3_GenerateStream(
-            chip,
-            output + (rendered * 2),
-            run
-        );
+        if (do_add) {
+            OPL3_GenerateStreamAdd(chip, output + (rendered * 2), run);
+        } else {
+            OPL3_GenerateStream(chip, output + (rendered * 2), run);
+        }
 
         scheduler->sample_position += run;
         rendered += run;

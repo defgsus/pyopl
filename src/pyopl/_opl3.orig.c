@@ -30,7 +30,9 @@ static PyTypeObject Opl3ChipType;
 /* ------------------------------------------------------------------ */
 
 static int
-parse_register_and_value(PyObject *args, PyObject *kwargs, uint16_t *reg, uint8_t *value, uint64_t *sample)
+parse_register_and_value(
+    PyObject *args, PyObject *kwargs, uint16_t *reg, uint8_t *value, uint64_t *sample
+)
 {
     long reg_long = 0;
     long value_long = 0;
@@ -271,7 +273,7 @@ Opl3Chip_generate_stream(Opl3ChipObject *self, PyObject *args)
     frame_count = (uint32_t)frames;
 
     Py_BEGIN_ALLOW_THREADS
-    opl3_scheduler_render(&self->scheduler, &self->chip, output, frame_count);
+    opl3_scheduler_render(&self->scheduler, &self->chip, output, frame_count, 0);
     //OPL3_GenerateStream(&self->chip, output, frame_count);
     Py_END_ALLOW_THREADS
 
@@ -287,17 +289,20 @@ Opl3Chip_generate_stream(Opl3ChipObject *self, PyObject *args)
  *     chip.generate_stream_into(frames, buffer)
  */
 static PyObject *
-Opl3Chip_generate_stream_into(Opl3ChipObject *self, PyObject *args)
+Opl3Chip_generate_stream_into(Opl3ChipObject *self, PyObject *args, PyObject *kwargs)
 {
     Py_ssize_t frames = 0;
     PyObject *buffer_object = NULL;
+    uint8_t do_add = 0;
     Py_buffer view;
     int16_t *output;
     uint32_t frame_count;
     Py_ssize_t required_bytes;
 
-    if (!PyArg_ParseTuple(
-            args, "nO:generate_stream_into", &frames, &buffer_object)) {
+    static char *kwlist[] = {"frames", "buffer", "do_add", NULL};
+
+    if (!PyArg_ParseTupleAndKeywords(
+            args, kwargs, "|nOb:generate_stream_into", kwlist, &frames, &buffer_object, &do_add)) {
         return NULL;
     }
 
@@ -337,7 +342,7 @@ Opl3Chip_generate_stream_into(Opl3ChipObject *self, PyObject *args)
     frame_count = (uint32_t)frames;
 
     Py_BEGIN_ALLOW_THREADS
-    opl3_scheduler_render(&self->scheduler, &self->chip, output, frame_count);
+    opl3_scheduler_render(&self->scheduler, &self->chip, output, frame_count, do_add);
     //OPL3_GenerateStream(&self->chip, output, frame_count);
     Py_END_ALLOW_THREADS
 
@@ -422,7 +427,7 @@ static PyMethodDef Opl3Chip_methods[] = {
     {
         "generate_stream_into",
         (PyCFunction)Opl3Chip_generate_stream_into,
-        METH_VARARGS,
+        METH_VARARGS | METH_KEYWORDS,
         "{{generate_stream_into}}"
     },
     {NULL, NULL, 0, NULL}

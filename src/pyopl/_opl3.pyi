@@ -101,7 +101,7 @@ class OPL3Chip:
         :return: bytes
         """
 
-    def generate_stream_into(self, frames: int, buffer: Buffer) -> None:
+    def generate_stream_into(self, frames: int, buffer: Buffer, do_add: bool = False) -> None:
         """
         Render `frames` interleaved stereo int16 frames into a writable,
         C-contiguous buffer. The buffer must contain at least frames * 4 bytes.
@@ -114,11 +114,17 @@ class OPL3Chip:
             # rendering into numpy array
             a = np.zeros(frames * 2, dtype=np.int16)
             chip.generate_stream_into(frames, a.data)
+            # get individual channels
             a_left = a[::2]
             a_right = a[1::2]
 
         :param frames: Number of samples to produce
         :param buffer: A writeable, C-contiguous buffer of size of at least frames * 4 bytes
+        :param do_add: If True, add to buffer instead of replacing values.
+            The addtion is done in signed 32-bit integers, then clipped and
+            converted back to 16-bit.
+        :raises ValueError: if buffer is too small
+        :raises OverflowError: if render size is too large
         """
 
     def delete_scheduled_writes(self) -> None:

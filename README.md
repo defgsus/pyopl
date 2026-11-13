@@ -52,8 +52,9 @@ with AudioStream(chip):
 ## [Examples](examples/)
 
 - [example_play.py](examples/example_play.py): Play two-operator notes on 18 channels.
-- [sound_editor.py](examples/sound_editor.py): Interactively edit all parameters of a single melody channel in 2-op or 4-op mode. Very useful to get to know the OPL3 capabilities.
 - [example_beat.py](examples/example_beat.py): Use the OPL3 rhythm mode and schedule register writes into the future, for accurate timing. 
+- [example_multichip.py](examples/example_multichip.py): Use two OPL3Chip instances at the same time to play 36 voices simultaneously.
+- [sound_editor.py](examples/sound_editor.py): Interactively edit all parameters of a single melody channel in 2-op or 4-op mode. Very useful to get to know the OPL3 capabilities.
 - [tracker/](examples/tracker/): A little console tracker for OPL3 rhythms. Allows live editing of patterns and all relevant settings.
   Run with `python examples/tracker`.
 
