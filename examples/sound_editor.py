@@ -18,6 +18,8 @@ class Global:
     op4: bool = False
     tremolo_depth: bool = False
     vibrato_depth: bool = False
+    #composite_sine_wave: bool = False
+    #note_sel: bool = False
 
 MAX_VALUES = {
     "op.freq_multiplier": 15,
@@ -57,9 +59,14 @@ class SoundEditor:
             self.update_chip(what)
         self.audio = AudioStream(self.chip)
         self.audio.start()
+        self._last_size = height, width = self.stdscr.getmaxyx()
 
     def draw(self):
         height, width = self.stdscr.getmaxyx()
+        if (height, width) != self._last_size:
+            self._last_size = (height, width)
+            self.stdscr.erase()
+
         for i in range(len(self.operators)):
             self.draw_thing(i * 25, 0, "op", i)
         for i in range(len(self.channels)):
@@ -284,6 +291,11 @@ class SoundEditor:
             self.state.set_4_ops(ch0=obj.op4)
             self.state.set_tremolo_vibrato_depth(obj.tremolo_depth, obj.vibrato_depth)
             self.state.midi_note_on(0, obj.note, note_on=self.is_note_on)
+            #self.chip.write(
+            #    0x08,
+            #    (int(self.global_config.composite_sine_wave) << 7)
+            #    | (int(self.global_config.note_sel << 6))
+            #)
 
     def play(self):
         cs = self.chip.current_sample

@@ -22,8 +22,9 @@ class OPL3Chip:
 
         :param sample_rate: The rate at which you want to sample the chip.
             The chip's internal rate is always 49716 Hz.
-            Methods like `generate_resampled` or `generate_stream` will
+            The methods `generate_stream` and `generate_stream_into` will
             generate samples at the specified frequency.
+            The samples will be resampled from the chip's internal sample-rate of 49716Hz.
         :param opl3: Boolean to specify OPL3 mode. If False, the chip is in OPL2 mode.
         """
 
@@ -50,7 +51,7 @@ class OPL3Chip:
     @property
     def current_sample(self) -> int:
         """
-        Return the current sample position (in specified sample_rate)
+        Return the current sample position (in configured sample_rate)
         :return: int
         """
 
@@ -73,7 +74,7 @@ class OPL3Chip:
         :param value: The byte value to store in the register
         :param sample: If sample is 0, the write happens immediately.
             If sample is > 0 it defines the absolute sample position
-            (in the specified sample_rate) when the register write takes place.
+            (in the configured sample_rate) when the register write takes place.
         """
 
     def write_buffered(self, reg: int, value: int) -> None:
@@ -106,12 +107,12 @@ class OPL3Chip:
             chip.generate_stream_into(frames, buffer)
 
         :param frames: Number of samples to produce
-        :param buffer: A writeable, C-contiguous buffer of size frames * 4
+        :param buffer: A writeable, C-contiguous buffer of size of at least frames * 4
         """
 
     def delete_scheduled_writes(self) -> None:
         """
         Clear all currently scheduled writes.
 
-        This removes all write() calls that had sample > 0 from the schedule
+        This removes all write() calls from the schedule that had sample > 0
         """

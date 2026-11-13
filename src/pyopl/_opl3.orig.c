@@ -168,6 +168,8 @@ Opl3Chip_reset(Opl3ChipObject *self, PyObject *args, PyObject *kwargs)
         OPL3_WriteReg(&self->chip, (uint16_t)0x105, (uint8_t)1);
     }
     self->sample_rate = sample_rate;
+    // also clear scheduled writes
+    opl3_scheduler_clear_schedule(&self->scheduler);
 
     Py_RETURN_NONE;
 }
@@ -366,6 +368,10 @@ Opl3Chip_get_current_sample(PyObject *self, void *closure)
         opl3_scheduler_current_sample_published(&((Opl3ChipObject*)self)->scheduler)
     );
 }
+
+/* ------------------------------------------------------------------ */
+/* Getters                                                            */
+/* ------------------------------------------------------------------ */
 
 static PyGetSetDef Opl3Chip_getset[] = {
     {"sample_rate", Opl3Chip_get_sample_rate, NULL,

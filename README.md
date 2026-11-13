@@ -14,17 +14,27 @@ from pyopl import *
 
 # low-level wrapper
 chip = OPL3Chip(48000)
-# high-level helper
+
+# program the chip 'by hand' ...
+chip.write(0xA0, 0x20)
+
+# schedule writes into the future
+# (in this case: execute at one second of rendered audio)
+chip.write(0xA0, 0x20, sample=48000)
+
+# use high-level helper
 state = OPL3State(chip)
 
 # all channel-wide settings can be set with the Channel class
 state.write_channel(0, Channel(fm=True, feedback=3))
 
+# Configure two operators for channel 0
 # operator settings are stored in Operator classes
-op1 = Operator(freq_multiplier=2, waveform=2, decay=1)
-op2 = Operator(decay=5, release=2, vibrato=True, tremolo=True)
-# Configure the two operators for channel 0
-state.write_operators(0, op1, op2)
+state.write_operators(
+  0,
+  Operator(freq_multiplier=2, waveform=2, decay=1),
+  Operator(decay=5, release=2, vibrato=True, tremolo=True)
+)
 
 # Small wrapper around the sounddevice library to generate
 # the audio stream in the background
@@ -42,6 +52,7 @@ with AudioStream(chip):
 ## [Examples](examples/)
 
 - [example_play.py](examples/example_play.py): Play two-operator notes on 18 channels.
+- [sound_editor.py](examples/sound_editor.py): Interactively edit all parameters of a single melody channel in 2-op or 4-op mode. Very useful to get to know the OPL3 capabilities.
 - [example_beat.py](examples/example_beat.py): Use the OPL3 rhythm mode and schedule register writes into the future, for accurate timing. 
 - [tracker/](examples/tracker/): A little console tracker for OPL3 rhythms. Allows live editing of patterns and all relevant settings.
   Run with `python examples/tracker`.
@@ -64,6 +75,11 @@ pip install --force-reinstall dist/*.whl
 # run the unit-tests
 python -m unittest discover tests/
 ```
+
+The `src/pyopl/_opl.pyi` file is the source of truth for all `OPL3Chip` annotations and doc-strings.
+They are copied to the c-implementation before building so source code, your IDE 
+and Python's `help(OPL3Chip)` all show the same.
+
 
 ## Resources
 

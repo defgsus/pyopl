@@ -174,6 +174,8 @@ Opl3Chip_reset(Opl3ChipObject *self, PyObject *args, PyObject *kwargs)
         OPL3_WriteReg(&self->chip, (uint16_t)0x105, (uint8_t)1);
     }
     self->sample_rate = sample_rate;
+    // also clear scheduled writes
+    opl3_scheduler_clear_schedule(&self->scheduler);
 
     Py_RETURN_NONE;
 }
@@ -373,13 +375,17 @@ Opl3Chip_get_current_sample(PyObject *self, void *closure)
     );
 }
 
+/* ------------------------------------------------------------------ */
+/* Getters                                                            */
+/* ------------------------------------------------------------------ */
+
 static PyGetSetDef Opl3Chip_getset[] = {
     {"sample_rate", Opl3Chip_get_sample_rate, NULL,
     "Return the specified sample rate.\n\nThis is not necessarily the chip's internal sample rate but the rate\nspecified in constructor or on last `reset()` call.\n\n:return: int", NULL},
     {"opl3", Opl3Chip_get_opl3, NULL,
     "Returns True if the chip is in OPL3 mode.\nReturns False if the chip is in OPL2 mode.\n\n:return: bool", NULL},
     {"current_sample", Opl3Chip_get_current_sample, NULL,
-    "Return the current sample position (in specified sample_rate)\n:return: int", NULL},
+    "Return the current sample position (in configured sample_rate)\n:return: int", NULL},
     {NULL}
 };
 
@@ -399,7 +405,7 @@ static PyMethodDef Opl3Chip_methods[] = {
         "write",
         (PyCFunction)Opl3Chip_write,
         METH_VARARGS | METH_KEYWORDS,
-        "write(reg: int, value: int, sample: int = 0)\n--\n\nWrite to a register.\n\n:param reg: The register, typically between 0x01 and 0x1F0\n:param value: The byte value to store in the register\n:param sample: If sample is 0, the write happens immediately.\n    If sample is > 0 it defines the absolute sample position\n    (in the specified sample_rate) when the register write takes place."
+        "write(reg: int, value: int, sample: int = 0)\n--\n\nWrite to a register.\n\n:param reg: The register, typically between 0x01 and 0x1F0\n:param value: The byte value to store in the register\n:param sample: If sample is 0, the write happens immediately.\n    If sample is > 0 it defines the absolute sample position\n    (in the configured sample_rate) when the register write takes place."
     },
     {
         "write_buffered",
@@ -411,7 +417,7 @@ static PyMethodDef Opl3Chip_methods[] = {
         "delete_scheduled_writes",
         (PyCFunction)Opl3Chip_delete_scheduled_writes,
         METH_NOARGS,
-        "delete_scheduled_writes()\n--\n\nClear all currently scheduled writes.\n\nThis removes all write() calls that had sample > 0 from the schedule"
+        "delete_scheduled_writes()\n--\n\nClear all currently scheduled writes.\n\nThis removes all write() calls from the schedule that had sample > 0"
     },
     {
         "generate_stream",
@@ -423,7 +429,7 @@ static PyMethodDef Opl3Chip_methods[] = {
         "generate_stream_into",
         (PyCFunction)Opl3Chip_generate_stream_into,
         METH_VARARGS,
-        "generate_stream_into(frames: int, buffer: bytearray)\n--\n\nRender `frames` interleaved stereo int16 frames into a writable,\nC-contiguous buffer. The buffer must contain at least frames * 4 bytes.\n\nExample:\n    buffer = bytearray(frames * 4)\n    chip.generate_stream_into(frames, buffer)\n\n:param frames: Number of samples to produce\n:param buffer: A writeable, C-contiguous buffer of size frames * 4"
+        "generate_stream_into(frames: int, buffer: bytearray)\n--\n\nRender `frames` interleaved stereo int16 frames into a writable,\nC-contiguous buffer. The buffer must contain at least frames * 4 bytes.\n\nExample:\n    buffer = bytearray(frames * 4)\n    chip.generate_stream_into(frames, buffer)\n\n:param frames: Number of samples to produce\n:param buffer: A writeable, C-contiguous buffer of size of at least frames * 4"
     },
     {NULL, NULL, 0, NULL}
 };
@@ -439,7 +445,7 @@ static PyTypeObject Opl3ChipType = {
     .tp_itemsize = 0,
     .tp_dealloc = (destructor)Opl3Chip_dealloc,
     .tp_flags = Py_TPFLAGS_DEFAULT,
-    .tp_doc = "Low-level wrapper around Nuked-OPL3 chip emulator.\n\nOriginal C source: https://github.com/nukeykt/Nuked-OPL3\n\nExample:\n    from pyopl import OPL3Chip\n\n    chip = OPL3Chip(sample_rate=48000, opl3=True)\n    chip.write(0xA0, 0x20)\n    ...\n    buffer = chip.generate_stream(1000)\n\nConstructor:\n\n__init__(sample_rate: int = 49716, opl3: bool = True)\n\n    Create a new chip instance.\n\n    :param sample_rate: The rate at which you want to sample the chip.\n        The chip's internal rate is always 49716 Hz.\n        Methods like `generate_resampled` or `generate_stream` will\n        generate samples at the specified frequency.\n    :param opl3: Boolean to specify OPL3 mode. If False, the chip is in OPL2 mode.",
+    .tp_doc = "Low-level wrapper around Nuked-OPL3 chip emulator.\n\nOriginal C source: https://github.com/nukeykt/Nuked-OPL3\n\nExample:\n    from pyopl import OPL3Chip\n\n    chip = OPL3Chip(sample_rate=48000, opl3=True)\n    chip.write(0xA0, 0x20)\n    ...\n    buffer = chip.generate_stream(1000)\n\nConstructor:\n\n__init__(sample_rate: int = 49716, opl3: bool = True)\n\n    Create a new chip instance.\n\n    :param sample_rate: The rate at which you want to sample the chip.\n        The chip's internal rate is always 49716 Hz.\n        The methods `generate_stream` and `generate_stream_into` will\n        generate samples at the specified frequency.\n        The samples will be resampled from the chip's internal sample-rate of 49716Hz.\n    :param opl3: Boolean to specify OPL3 mode. If False, the chip is in OPL2 mode.",
     .tp_methods = Opl3Chip_methods,
     .tp_init = (initproc)Opl3Chip_init,
     .tp_new = Opl3Chip_new,
