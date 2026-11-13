@@ -30,12 +30,12 @@ class Instrument:
     name: str
     attack: int = 15
     decay: int = 7
-    sustain_level: int = 8
+    sustain: int = 8
     release: int = 4
     volume: int = 50
     waveform: int = 0
     freq_mult: int = 0
-    sustain: bool = False
+    sustain_on: bool = False
 
     def to_dict(self) -> dict:
         return vars(self)
@@ -403,8 +403,8 @@ class TrackerUI:
         self.instrument_fields = [
             ("attack", "num", 0, 15),
             ("decay", "num", 0, 15),
-            ("sustain", "bool", None, None),
-            ("sustain_level", "num", 0, 15),
+            ("sustain_on", "bool", None, None),
+            ("sustain", "num", 0, 15),
             ("release", "num", 0, 15),
             ("volume", "num", 0, 63),
             ("waveform", "num", 0, 7),

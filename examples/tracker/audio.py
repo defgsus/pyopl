@@ -51,8 +51,8 @@ class OPL3Engine:
                 freq_multiplier=inst.freq_mult,
                 attack=inst.attack,
                 decay=inst.decay,
+                sustain_on=inst.sustain_on,
                 sustain=inst.sustain,
-                sustain_level=inst.sustain_level,
                 release=inst.release,
                 waveform=inst.waveform,
             )

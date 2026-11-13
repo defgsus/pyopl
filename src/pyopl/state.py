@@ -77,6 +77,9 @@ class Channel:
 class Operator:
     """
     Settings for an operator (0-35)
+
+    Note that `output_level` and `sustain` are inverted to the original OPL implementation
+    meaning: output_level=63 and sustain=15 are maximum volume
     """
     freq_multiplier: int = 1    # 0 - 15
     ksr: bool = False
@@ -86,9 +89,9 @@ class Operator:
     key_scale_level: int = 1    # 0 -  3
     attack: int = 15            # 0 - 15
     decay: int = 1              # 0 - 15
-    sustain: bool = False
-    sustain_level: int = 15     # 0 - 15
+    sustain: int = 0            # 0 - 15
     release: int = 5            # 0 - 15
+    sustain_on: bool = False
     waveform: int = 0           # 0 -  7
 
     def write(self, chip: OPL3Chip, index: int, sample: int = 0):
@@ -98,7 +101,7 @@ class Operator:
         :param chip: OPL3Chip instance
         :param index: int, Operator index [0, 35]. Note that depending on the chip's opl3 flag,
             the index number must be mapped via `OPL2_OP_INDICES` or `OPL3_OP_INDICES`.
-            Rather use `OPL3State.write_operators()` for convenience.
+            For convenience use `OPL3State.write_operators()` which does the mapping.
 
         :param sample: int, optional absolute sample position to execute register write
         """
@@ -107,7 +110,7 @@ class Operator:
             0x20 + reg_index,
             (self.freq_multiplier & 15)
             | (int(self.ksr) << 4)
-            | (int(self.sustain) << 5)
+            | (int(self.sustain_on) << 5)
             | (int(self.vibrato) << 6)
             | (int(self.tremolo) << 7),
             sample=sample,
@@ -127,7 +130,7 @@ class Operator:
         chip.write(
             0x80 + reg_index,
             (self.release & 15)
-            | ((self.sustain_level & 15) << 4),
+            | ((15 - (self.sustain & 15)) << 4),
             sample=sample,
             )
         chip.write(

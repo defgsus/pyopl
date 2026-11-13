@@ -27,7 +27,7 @@ MAX_VALUES = {
     "op.key_scale_level": 3,
     "op.attack": 15,
     "op.decay": 15,
-    "op.sustain_level": 15,
+    "op.sustain": 15,
     "op.release": 15,
     "op.waveform": 7,
     "ch.feedback": 7,
