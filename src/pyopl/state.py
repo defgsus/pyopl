@@ -75,18 +75,18 @@ class Operator:
     """
     Settings for an operator (0-35)
     """
-    freq_multiplier: int = 1    # 0-15
+    freq_multiplier: int = 1    # 0 - 15
     ksr: bool = False
-    sustain: bool = False
-    vibrato: bool = False
     tremolo: bool = False
+    vibrato: bool = False
     output_level: int = 63      # 0 - 63
-    key_scale_level: int = 1    # 0 - 3
+    key_scale_level: int = 1    # 0 -  3
     attack: int = 15            # 0 - 15
-    decay: int = 0              # 0 - 15
+    decay: int = 1              # 0 - 15
+    sustain: bool = False
     sustain_level: int = 15     # 0 - 15
     release: int = 5            # 0 - 15
-    waveform: int = 0           # 0 - 7
+    waveform: int = 0           # 0 -  7
 
     def write(self, chip: OPL3Chip, index: int, sample: int = 0):
         """
@@ -100,7 +100,7 @@ class Operator:
         reg_index = OP_REGISTERS[index]
         chip.write(
             0x20 + reg_index,
-            (self.freq_multiplier & 7)
+            (self.freq_multiplier & 15)
             | (int(self.ksr) << 4)
             | (int(self.sustain) << 5)
             | (int(self.vibrato) << 6)
@@ -156,6 +156,29 @@ class OPL3State:
             sample=sample,
         )
 
+    def set_tremolo_vibrato_depth(
+            self,
+            tremolo: bool = False,
+            vibrato: bool = False,
+            sample: int = 0,
+    ):
+        """
+        Set tremolo and vibrato depth.
+
+        Note! This collides with the rhythm mode & rhythm note-on bits because
+        it is the same register!
+
+        :param tremolo: False = 1 dB, True = 4.8 dB
+        :param vibrato: False = 7 cents, True = 14 cents
+        :param sample:
+        :return:
+        """
+        self.chip.write(
+            0xBD,
+            (int(tremolo) << 7)
+            | (int(vibrato) << 6),
+            sample=sample
+        )
     def rhythm_on(
             self,
             bd: bool = False,
@@ -262,11 +285,12 @@ class OPL3State:
     ):
         ch.write(self.chip, channel, sample=sample)
 
-    def write_operators(self, channel: int, *operators: Operator, sample: int = 0):
+    def write_operators(self, channel: int, *operators: Operator|None, sample: int = 0):
         if self.opl3:
             op_index = OPL3_OP_INDICES[channel]
         else:
             op_index = OPL2_OP_INDICES[channel]
 
         for i, op in enumerate(operators):
-            op.write(self.chip, index=op_index + i * 3, sample=sample)
+            if op is not None:
+                op.write(self.chip, index=op_index + i * 3, sample=sample)

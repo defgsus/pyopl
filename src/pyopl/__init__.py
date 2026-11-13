@@ -23,3 +23,20 @@ from .stream import AudioStream
 
 # The Chip's internal sample rate
 DEFAULT_SAMPLE_RATE = 49716
+
+__all__ = [
+    "DEFAULT_SAMPLE_RATE",
+    "OPL3Chip",
+    "frequency_to_f_number_and_block",
+    "midi_note_to_frequency",
+    "midi_note_to_f_number_and_block",
+    "CHANNEL_REGISTERS",
+    "OP_REGISTERS",
+    "OPL2_OP_INDICES",
+    "OPL3_OP_INDICES",
+    "Waveform",
+    "Channel",
+    "Operator",
+    "OPL3State",
+    "AudioStream",
+]
