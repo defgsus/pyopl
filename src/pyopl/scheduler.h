@@ -74,6 +74,9 @@ void opl3_scheduler_clear_schedule(opl3_scheduler *scheduler);
 /* Audio-thread only. */
 uint64_t opl3_scheduler_current_sample(const opl3_scheduler *scheduler);
 
+/* Audio-thread only. */
+void opl3_scheduler_reset_current_sample(opl3_scheduler *scheduler);
+
 /*
  * Audio-thread only.
  *

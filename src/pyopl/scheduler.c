@@ -227,6 +227,16 @@ opl3_scheduler_current_sample_published(const opl3_scheduler *scheduler)
 }
 
 void
+opl3_scheduler_reset_current_sample(opl3_scheduler *scheduler) {
+    scheduler->sample_position = 0;
+    atomic_store_explicit(
+        &scheduler->sample_position_published,
+        0,
+        memory_order_release
+    );
+}
+
+void
 opl3_scheduler_clear_schedule(opl3_scheduler *scheduler)
 {
     command_ring_push(

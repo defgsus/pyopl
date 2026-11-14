@@ -172,6 +172,8 @@ Opl3Chip_reset(Opl3ChipObject *self, PyObject *args, PyObject *kwargs)
     self->sample_rate = sample_rate;
     // also clear scheduled writes
     opl3_scheduler_clear_schedule(&self->scheduler);
+    // and reset current sample position
+    opl3_scheduler_reset_current_sample(&self->scheduler);
 
     Py_RETURN_NONE;
 }

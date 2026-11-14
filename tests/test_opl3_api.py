@@ -129,3 +129,11 @@ class TestOPL3Api(unittest.TestCase):
         self.assertEqual(23, chip.current_sample)
         chip.generate_stream_into(5, buffer)
         self.assertEqual(28, chip.current_sample)
+
+    def test_chip_current_sample_reset(self):
+        chip = OPL3Chip()
+        for i in range(2):
+            self.assertEqual(0, chip.current_sample)
+            chip.generate_stream(23)
+            self.assertEqual(23, chip.current_sample)
+            chip.reset()
