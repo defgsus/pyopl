@@ -47,6 +47,12 @@ class PatternChannel:
     def length(self) -> int:
         return len(self.rows)
 
+    def delete_row(self, row: int):
+        self.rows = self.rows[:row] + self.rows[row + 1:] + [Cell()]
+
+    def insert_row(self, row: int):
+        self.rows = self.rows[:row] + [Cell()] + self.rows[row:-1]
+
 
 class Pattern:
 
@@ -69,3 +75,23 @@ class Pattern:
 
     def __setitem__(self, channel_row: tuple[int, int], cell: Cell):
         self.channels[channel_row[0]].rows[channel_row[1]] = cell
+
+    def delete_row(self, row: int, channel: int | list[int] | None = None):
+        if channel is None:
+            channels = range(len(self.channels))
+        elif isinstance(channel, int):
+            channels = [channel]
+        else:
+            channels = channel
+        for ch in channels:
+            self.channels[ch].delete_row(row)
+
+    def insert_row(self, row: int, channel: int | list[int] | None = None):
+        if channel is None:
+            channels = range(len(self.channels))
+        elif isinstance(channel, int):
+            channels = [channel]
+        else:
+            channels = channel
+        for ch in channels:
+            self.channels[ch].insert_row(row)

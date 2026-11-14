@@ -1,6 +1,7 @@
 import dataclasses
 
 from .pattern import Cell, Pattern
+from .instrument import Instrument
 
 
 @dataclasses.dataclass
@@ -9,19 +10,24 @@ class SongConfig:
     channels: int = 16
     name: str = "new song"
     bpm: int = 120
+    signature: tuple[int, int] = (4, 4)
 
 
 class Song:
 
     def __init__(self, config: SongConfig | None = None):
+        from ..audio import Player
         self.config = config or SongConfig()
         self.patterns: list[Pattern] = [
             Pattern(
                 channels=self.config.channels,
                 length=self.config.default_pattern_length
             )
-            for _ in range(self.config.channels)
         ]
+        self.instruments: list[Instrument] = [
+            Instrument()
+        ]
+        self.player: Player = Player(self)
 
     @property
     def num_channels(self) -> int:
@@ -30,3 +36,13 @@ class Song:
     @property
     def bpm(self) -> int:
         return self.config.bpm
+
+    @property
+    def signature(self) -> tuple[int, int]:
+        return self.config.signature
+
+    def play(self):
+        self.player.start()
+
+    def stop(self):
+        self.player.stop()

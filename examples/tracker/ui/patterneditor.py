@@ -3,24 +3,31 @@ from rich.segment import Segment
 
 from textual.app import App, ComposeResult, RenderResult
 from textual.containers import HorizontalScroll
+from textual.geometry import Region
 from textual.widgets import Footer, Header, Static
 from textual.widget import Widget
 from textual.strip import Strip
 from textual.style import Style
 from textual import events
 
+from ..audio import Player
 from ..data import NOTE_OFF, Song, SongConfig, Pattern, Cell
 
+
+KEYBOARD_NOTES = "q2w3er5t6z7u"
 
 class PatternEditor(Widget):
     can_focus = True
 
     COMPONENT_CLASSES = {
         "pattern--normal",
+        "pattern--playback-row",
         "pattern--header",
+        "pattern--header-playback-row",
         "pattern--highlight",
         "pattern--selected",
         "pattern--cursor",
+        "pattern--cursor-selected",
     }
 
     BINDINGS = [
@@ -28,19 +35,26 @@ class PatternEditor(Widget):
         ("down", "cursor_down", "Down"),
         ("left", "cursor_left", "Left"),
         ("right", "cursor_right", "Right"),
-        ("ctrl+left", "cursor_channel_left", "Left"),
-        ("ctrl+right", "cursor_channel_right", "Right"),
+        ("ctrl+left", "cursor_channel_left", "Prev chan"),
+        ("ctrl+right", "cursor_channel_right", "Next chan"),
         ("pageup", "cursor_page_up", "16 up"),
         ("pagedown", "cursor_page_down", "16 down"),
         ("home", "cursor_home", "Channel start"),
         ("end", "cursor_end", "Channel end"),
         ("ctrl+a", "select_all", "Select all"),
         ("ctrl+u", "unselect", "Unselect"),
+        ("backspace", "backspace", "Delete value"),
+        ("delete", "delete_row", "Delete row"),
+        ("ctrl+delete", "delete_row(True)", "Delete row in all channels"),
+        ("insert", "insert_row", "Insert row"),
+        ("ctrl+insert", "insert_row(True)", "Insert row in all channels"),
+        ("I", "insert_row(True)", "Insert row in all channels"),
     ]
 
-    def __init__(self, **kwargs):
+    def __init__(self, song: Song, player: Player, **kwargs):
         super().__init__(**kwargs)
-        self.song = Song()
+        self.song = song
+        self.player = player
         self.pattern_index = 0
         self.instrument_index = 0
         self.octave = 3
@@ -50,6 +64,7 @@ class PatternEditor(Widget):
         self.field_names = ["note", "inst", "vol", "fx"]
         self.x_padding = 4          # row index col
         self.y_padding = 1          # channel header
+        self.y_padding_bottom = 1         # bottom row
 
         self.cursor_channel = 0
         self.cursor_row = 0
@@ -65,12 +80,38 @@ class PatternEditor(Widget):
     def pattern(self) -> Pattern:
         return self.song.patterns[self.pattern_index]
 
+    @property
+    def cursor_field_name(self) -> str:
+        return self.field_names[self.cursor_field]
+
+    def info_bar(self) -> list[Segment]:
+        header_style = self.get_component_rich_style("pattern--header")
+        sel = self.get_min_max_selection()
+        if not sel:
+            sel = "none"
+        else:
+            sel = (
+                f"ch{sel[0][0] + 1}({self.field_names[sel[0][1]]})/row{sel[1]} - "
+                f"ch{sel[2][0] + 1}({self.field_names[sel[2][1]]})/row{sel[3]}"
+            )
+        text = (
+            f"pat {self.pattern_index:03d}"
+            f" | ch {self.cursor_channel + 1}"
+            f" | row {self.cursor_row}"
+            f" | field {self.cursor_field}"
+            f" | sel {sel}".ljust(self.size.width)
+        )
+        return [Segment(text, header_style)]
+
     def render_line(self, y: int):
         normal_style = self.get_component_rich_style("pattern--normal")
+        play_style = self.get_component_rich_style("pattern--playback-row")
         header_style = self.get_component_rich_style("pattern--header")
+        header_play_style = self.get_component_rich_style("pattern--header-playback-row")
         highlight_style = self.get_component_rich_style("pattern--highlight")
         cursor_style = self.get_component_rich_style("pattern--cursor")
         select_style = self.get_component_rich_style("pattern--selected")
+        cursor_select_style = self.get_component_rich_style("pattern--cursor-selected")
 
         num_visible_columns = self.num_columns_visible()
 
@@ -86,25 +127,17 @@ class PatternEditor(Widget):
                 ))
             return Strip(segments)
         elif y == self.size.height - self.scroll_offset.y - self.y_padding:
-            sel = self.get_min_max_selection()
-            if not sel:
-                sel = "none"
-            else:
-                sel = (
-                    f"ch{sel[0][0]}:{self.field_names[sel[0][1]]}/row{sel[1] + 1} - "
-                    f"ch{sel[2][0]}:{self.field_names[sel[2][1]]}/row{sel[3] + 1}"
-                )
-            text = (
-                f"ch {self.cursor_channel + 1}"
-                f" | row {self.cursor_row}"
-                f" | field {self.cursor_field}"
-                f" | sel {sel}".ljust(self.size.width)
-            )
-            return Strip([Segment(text, header_style)])
+            return Strip(self.info_bar())
+
 
         row = y + self.row_offset - self.y_padding
         is_row_cursor = row == self.cursor_row
-        row_style = highlight_style if is_row_cursor else normal_style
+        is_playback_row = self.player.is_playing and row == self.player.playback_row
+
+        row_style = highlight_style if is_row_cursor else (
+            play_style if is_playback_row
+            else normal_style
+        )
 
         is_row_selected = False
         min_max_sel = self.get_min_max_selection()
@@ -115,7 +148,7 @@ class PatternEditor(Widget):
             is_row_selected = min_max_sel[1] <= row <= min_max_sel[3]
 
         segments = [
-            Segment(f"{row:03d}", header_style),
+            Segment(f"{row:03d}", header_play_style if is_playback_row else header_style),
             Segment("|", normal_style),
         ]
         for col_idx in range(num_visible_columns):
@@ -130,14 +163,14 @@ class PatternEditor(Widget):
                 x = col * self.num_fields + field
                 field_style = row_style
                 gap_style = row_style
-                if is_cell_cursor and self.cursor_field == field:
-                    field_style = cursor_style
-                elif is_row_selected:
+                if is_row_selected:
                     if min_x_sel <= x:
                         if x <= max_x_sel:
                             field_style = select_style
-                if is_row_selected and min_x_sel <= x < max_x_sel:
-                    gap_style = select_style
+                    if min_x_sel <= x < max_x_sel:
+                        gap_style = select_style
+                if is_cell_cursor and self.cursor_field == field:
+                    field_style = cursor_select_style if field_style == select_style else cursor_style
 
                 segments.append(Segment(text, field_style))
                 if field < self.num_fields - 1:
@@ -153,6 +186,10 @@ class PatternEditor(Widget):
                 ))
 
         return Strip(segments)
+
+    def refresh_row(self, pattern_row: int):
+        y = pattern_row - self.row_offset + self.y_padding
+        self.refresh(Region(0, y-1, self.size.width, 2))
 
     def update_selection(self):
         sel = ((self.cursor_channel, self.cursor_field), self.cursor_row)
@@ -195,7 +232,7 @@ class PatternEditor(Widget):
         return (self.scrollable_size.width - self.x_padding) // self.column_width
 
     def num_rows_visible(self) -> int:
-        return self.scrollable_size.height - self.y_padding
+        return self.scrollable_size.height - self.y_padding - self.y_padding_bottom
 
     def follow_cursor(self):
         cols = self.num_columns_visible()
@@ -219,8 +256,11 @@ class PatternEditor(Widget):
     def action_cursor_left(self):
         self.cursor_field -= 1
         if self.cursor_field < 0:
-            self.cursor_field = self.num_fields - 1
-            self.cursor_channel = max(self.cursor_channel - 1, 0)
+            if self.cursor_channel == 0:
+                self.cursor_field = 0
+            else:
+                self.cursor_field = self.num_fields - 1
+                self.cursor_channel = max(self.cursor_channel - 1, 0)
         self.follow_cursor()
         self.refresh()
 
@@ -265,7 +305,10 @@ class PatternEditor(Widget):
         if self.cursor_field > 0:
             self.cursor_field = 0
         else:
-            self.cursor_channel = 0
+            if self.cursor_channel == 0:
+                self.cursor_row = 0
+            else:
+                self.cursor_channel = 0
         self.follow_cursor()
         self.refresh()
 
@@ -273,7 +316,10 @@ class PatternEditor(Widget):
         if self.cursor_field < self.num_fields - 1:
             self.cursor_field = self.num_fields - 1
         else:
-            self.cursor_channel = self.pattern.num_channels - 1
+            if self.cursor_channel == self.pattern.num_channels - 1:
+                self.cursor_row = self.pattern.length - 1
+            else:
+                self.cursor_channel = self.pattern.num_channels - 1
         self.follow_cursor()
         self.refresh()
 
@@ -312,9 +358,32 @@ class PatternEditor(Widget):
         self.selection_start = self.selection_end = None
         self.refresh()
 
+    def action_backspace(self):
+        if self.cursor_field_name == "note":
+            self.pattern[self.cursor_channel, self.cursor_row].note = None
+
+        self.refresh()
+
+    def action_delete_row(self, all_channels: bool = False):
+        self.pattern.delete_row(self.cursor_row, None if all_channels else self.cursor_channel)
+        self.refresh()
+
+    def action_insert_row(self, all_channels: bool = False):
+        self.pattern.insert_row(self.cursor_row, None if all_channels else self.cursor_channel)
+        self.refresh()
+
     def on_key(self, event: events.Key) -> None:
+        #self.app.notify(f"key {event.key}")
         catched = True
-        if event.key in ("shift+left", ):
+        if self.cursor_field_name == "note" and event.character and event.character in KEYBOARD_NOTES:
+            note = KEYBOARD_NOTES.index(event.character) + 12 * self.octave
+            self.pattern[self.cursor_channel, self.cursor_row].note = note
+            self.action_cursor_down()
+        elif self.cursor_field_name == "note" and event.character and event.character in "^1":
+            note = NOTE_OFF
+            self.pattern[self.cursor_channel, self.cursor_row].note = note
+            self.action_cursor_down()
+        elif event.key in ("shift+left", ):
             self.update_selection()
             self.action_cursor_left()
             self.update_selection()

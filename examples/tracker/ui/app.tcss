@@ -18,18 +18,30 @@ PatternEditor {
     height: 1fr;
     border: solid $primary;
     color: #ddd;
-}
-PatternEditor .pattern--header {
-    background: #464;
-}
-PatternEditor .pattern--highlight {
-    background: #444;
-    color: #fff;
-}
-PatternEditor .pattern--selected {
-    background: #346;
-}
-PatternEditor .pattern--cursor {
-    background: #776;
-    color: #fff;
+    & .pattern--header {
+        background: #464;
+    }
+    & .pattern--header-playback-row {
+        background: #797;
+        color: #fff;
+    }
+    & .pattern--highlight {
+        background: #444;
+        color: #fff;
+    }
+    & .pattern--playback-row {
+        background: #343;
+        color: #eee;
+    }
+    & .pattern--selected {
+        background: #346;
+    }
+    & .pattern--cursor {
+        background: #776;
+        color: #fff;
+    }
+    & .pattern--cursor-selected {
+        background: #78a;
+        color: #fff;
+    }
 }
