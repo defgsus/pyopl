@@ -1,0 +1,35 @@
+Screen {
+    layout: vertical;
+}
+
+#info {
+    height: auto;
+    padding: 0 1;
+    background: $surface;
+    border-bottom: solid $primary;
+}
+
+
+Footer {
+    height: 1;
+}
+
+PatternEditor {
+    height: 1fr;
+    border: solid $primary;
+    color: #ddd;
+}
+PatternEditor .pattern--header {
+    background: #464;
+}
+PatternEditor .pattern--highlight {
+    background: #444;
+    color: #fff;
+}
+PatternEditor .pattern--selected {
+    background: #346;
+}
+PatternEditor .pattern--cursor {
+    background: #776;
+    color: #fff;
+}
