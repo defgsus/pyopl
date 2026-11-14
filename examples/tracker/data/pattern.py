@@ -21,7 +21,7 @@ class Cell:
             return "..."
         if self.note == NOTE_OFF:
             return "^^^"
-        return f"{NOTE_NAMES[self.note % 12]}{self.note // 12}"
+        return f"{NOTE_NAMES[self.note % 12]}{hex(self.note // 12)[2:]}"
 
     @property
     def instrument_text(self) -> str:

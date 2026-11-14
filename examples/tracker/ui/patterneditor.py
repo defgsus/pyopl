@@ -57,7 +57,7 @@ class PatternEditor(Widget):
         self.player = player
         self.pattern_index = 0
         self.instrument_index = 0
-        self.octave = 3
+        self.octave = 4
 
         self.column_width = 14      # width of one column incl. separator
         self.num_fields = 4         # number of fields per pattern cell
@@ -75,6 +75,8 @@ class PatternEditor(Widget):
 
         self.selection_start: tuple[tuple[int, int], int] | None = None
         self.selection_end: tuple[tuple[int, int], int] | None = None
+
+        self._last_playback_row: int | None = None
 
     @property
     def pattern(self) -> Pattern:
@@ -99,6 +101,8 @@ class PatternEditor(Widget):
             f" | ch {self.cursor_channel + 1}"
             f" | row {self.cursor_row}"
             f" | field {self.cursor_field}"
+            f" | oct {self.octave}"
+            #f" | play-row {self.player.playback_row:03d}"
             f" | sel {sel}".ljust(self.size.width)
         )
         return [Segment(text, header_style)]
@@ -187,9 +191,32 @@ class PatternEditor(Widget):
 
         return Strip(segments)
 
-    def refresh_row(self, pattern_row: int):
-        y = pattern_row - self.row_offset + self.y_padding
+    def pattern_row_to_screen_row(self, row: int):
+        return row - self.row_offset + self.y_padding
+
+    def refresh_pattern_row(
+            self,
+            pattern_row: int | None = None,
+            status: bool = False
+    ):
+        if pattern_row is None:
+            pattern_row = self.cursor_row
+        y = self.pattern_row_to_screen_row(pattern_row)
         self.refresh(Region(0, y-1, self.size.width, 2))
+        if status:
+            self.refresh(Region(0, self.size.height-1, self.size.width, 1))
+
+    def refresh_playback_row(self):
+        row = self.player.playback_row
+        if self._last_playback_row is None:
+            self.refresh()
+        else:
+            if row < self._last_playback_row:
+                self.refresh()
+            elif row > self._last_playback_row:
+                y = self.pattern_row_to_screen_row(self._last_playback_row)
+                self.refresh(Region(0, y, self.size.width, y + row - self._last_playback_row))
+        self._last_playback_row = row
 
     def update_selection(self):
         sel = ((self.cursor_channel, self.cursor_field), self.cursor_row)
@@ -376,9 +403,21 @@ class PatternEditor(Widget):
         #self.app.notify(f"key {event.key}")
         catched = True
         if self.cursor_field_name == "note" and event.character and event.character in KEYBOARD_NOTES:
+            cell = self.pattern[self.cursor_channel, self.cursor_row]
             note = KEYBOARD_NOTES.index(event.character) + 12 * self.octave
-            self.pattern[self.cursor_channel, self.cursor_row].note = note
+            cell.note = note
             self.action_cursor_down()
+            self.player.play_cell(self.cursor_channel, cell)
+        elif self.cursor_field_name == "note" and event.character and event.character in "+-":
+            cell = self.pattern[self.cursor_channel, self.cursor_row]
+            if cell.note is not None and cell.note >= 0:
+                if event.character == "+" and cell.note < 127 - 12:
+                    cell.note += 12
+                elif event.character == "-" and cell.note >= 12:
+                    cell.note -= 12
+                self.player.play_cell(self.cursor_channel, cell)
+                self.octave = cell.note // 12
+                self.refresh_pattern_row(status=True)
         elif self.cursor_field_name == "note" and event.character and event.character in "^1":
             note = NOTE_OFF
             self.pattern[self.cursor_channel, self.cursor_row].note = note

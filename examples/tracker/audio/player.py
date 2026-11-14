@@ -1,11 +1,12 @@
+import math
 import threading
+import queue
 import time
 import copy
-from typing import Callable
 
 from pyopl import *
 
-from ..data import Song
+from ..data import Song, Cell, Instrument, NOTE_OFF
 
 
 class Player:
@@ -14,32 +15,62 @@ class Player:
             self,
             song: Song,
             sample_rate: int = 48000,
+            debug: bool = False,
     ):
         self.song = song
-        self.playback_row = 0
+        self.debug = debug
+        self._in_queue = queue.Queue()
+        self.out_queue = queue.Queue()
 
         self.chip = OPL3Chip(sample_rate)
+        self.chip_state = OPL3State(self.chip)
         self.stream = AudioStream(self.chip)
         self.thread: threading.Thread | None = None
         self._do_stop = False
         self.song_lock = threading.Lock()
-        self._last_programmed_row = None
-        self._row_callback: Callable | None = None
 
-    @property
-    def is_playing(self) -> bool:
-        return bool(self.thread and self.thread.is_alive())
+        self._playing = False
 
-    def start(self):
+        self._last_programmed_song_row = -1
+        self._programmed_instruments: dict[int, int] = {}  # channel idx -> instr idx
+
+    # ---- threadsafe API -----
+
+    def start_audio(self):
         self._start_thread()
         self.stream.start()
 
-    def stop(self):
+    def stop_audio(self):
         self.stream.stop()
         self._stop_thread()
 
-    def set_row_callback(self, callable: Callable):
-        self._row_callback = callable
+    @property
+    def is_running(self) -> bool:
+        return bool(self.thread and self.thread.is_alive())
+
+    @property
+    def is_playing(self) -> bool:
+        return self._playing
+
+    @property
+    def playback_row(self) -> int:
+        song_row = self.sample_to_row(self.chip.current_sample)
+        return int(song_row) % 64  # TODO
+
+    def play(self):
+        self._in_queue.put_nowait({"play_song": True})
+
+    def stop(self):
+        self._playing = False
+
+    def play_cell(self, channel: int, cell: Cell):
+        self._in_queue.put_nowait({"play_cell": (channel, cell)})
+
+    def panic(self):
+        """All notes off"""
+        self._in_queue.put_nowait({"panic": True})
+
+    # ---- internal API ----
 
     def _start_thread(self):
         if not self.thread:
@@ -55,38 +86,100 @@ class Player:
             self.thread = None
 
     def _thread_main_loop(self):
-        window_time = .1
-        sample_window = int(self.chip.sample_rate * window_time)
+        secs_per_row = self.row_to_sample(1) / self.chip.sample_rate
+        if self.debug:
+            print("ROW-secs:", secs_per_row)
+        lookahead_time = secs_per_row * 5
+        lookahead_samples = int(self.chip.sample_rate * lookahead_time)
         while not self._do_stop:
-            self.program_chip(sample_window)
-            time.sleep(window_time * .9)
+            while True:
+                try:
+                    message = self._in_queue.get_nowait()
+                    self.process_input_message(message)
+                except queue.Empty:
+                    break
+
+            if self._playing:
+                sam = self.row_to_sample(self._last_programmed_song_row)
+                if (sam - self.chip.current_sample) / self.chip.sample_rate < .1:
+                    self.program_chip_playback(lookahead_samples)
+
+            time.sleep(0.01)
 
     def sample_to_row(self, sample: int) -> float:
         sec = sample / self.chip.sample_rate
-        beat = self.song.bpm / 60 * sec * 4
+        beat = 4 * self.song.bpm / 60 * sec
         sig = self.song.signature
         row = beat * sig[0] / sig[1]
         return row
 
-    def program_chip(self, sample_window: int):
-        current_sample = self.chip.current_sample
-        playback_row = self.sample_to_row(current_sample)
-        playback_row = int(playback_row)
-        if playback_row == self._last_programmed_row:
-            return
+    def row_to_sample(self, row: int|float) -> int:
+        sig = self.song.signature
+        beat = row / sig[0] * sig[1]
+        sec = beat / (self.song.bpm / 60 * 4)
+        return int(sec * self.chip.sample_rate)
 
-        # make a thread-safe copy of the current row
-        with self.song_lock:
+    def program_chip_playback(self, lookahead_samples: int):
+        num_rows = int(math.ceil(self.sample_to_row(lookahead_samples)))
+        current_sample = self.chip.current_sample
+        song_row_start = int(self.sample_to_row(current_sample))
+
+        if self.debug:
+            print(f"row {song_row_start} - {song_row_start + num_rows}")
+
+        for row_idx in range(num_rows):
+            song_row = int(song_row_start + row_idx)
+            if self._last_programmed_song_row and song_row <= self._last_programmed_song_row:
+                continue
+
             pattern = self.song.patterns[0]
             pattern_length = pattern.length
-            playback_row = playback_row % pattern_length
+            pattern_row = song_row % pattern_length
+
             row = [
-                copy.copy(chan.rows[playback_row])
+                chan.rows[pattern_row]
                 for chan in pattern.channels
             ]
 
-        self._last_programmed_row = playback_row
-        self.playback_row = playback_row
-        if self._row_callback:
-            self._row_callback()
+            self.program_chip_row(song_row, row)
+            self._last_programmed_song_row = song_row
 
+    def program_chip_row(self, row_num: int, row: list[Cell]):
+        sample = self.row_to_sample(row_num)
+        for ch, cell in enumerate(row):
+            self.program_cell(sample, ch, cell)
+
+    def program_cell(self, sample, ch: int, cell: Cell):
+            # prepare instrument
+            inst_idx = cell.instrument or 0
+            if self._programmed_instruments.get(ch) != inst_idx:
+                inst = self.song.instruments[inst_idx]
+                self.chip_state.write_channel(ch, inst.channel_settings, sample=sample)
+                self.chip_state.write_operators(ch, *inst.operators, sample=sample)
+                self._programmed_instruments[ch] = inst_idx
+
+            if cell.note == NOTE_OFF:
+                self.chip_state.note_off(ch, sample=sample + 2)
+            elif cell.note is not None:
+                if self.debug:
+                    print(f"note: sample={sample}, cur_sample={self.chip.current_sample}")
+                self.chip_state.note_off(ch, sample=sample + 2)
+                self.chip_state.midi_note_on(ch, cell.note, sample=sample + 4)
+
+    def process_input_message(self, message: dict):
+        sample = self.chip.current_sample
+
+        if msg := message.get("play_cell"):
+            ch, cell = msg
+            self.program_cell(sample, ch, cell)
+
+        if "play_song" in message:
+            self._playing = True
+            self.chip.reset(self.chip.sample_rate)
+            self._programmed_instruments.clear()
+            self._last_programmed_song_row = -1
+
+        if "panic" in message:
+            self.chip.delete_scheduled_writes()
+            for ch in range(18):
+                self.chip_state.note_off(ch)

@@ -29,6 +29,11 @@ class Song:
         ]
         self.player: Player = Player(self)
 
+        pat_chan = self.patterns[0].channels[0]
+        for i in range(pat_chan.length):
+            if i % 4 in (0, 3):
+                pat_chan.rows[i].note = 48 + i % 37
+
     @property
     def num_channels(self) -> int:
         return self.config.channels

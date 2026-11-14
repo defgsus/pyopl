@@ -1,3 +1,4 @@
+import queue
 from functools import partial
 
 from rich.text import Text
@@ -25,26 +26,40 @@ class TrackerApp(App):
         self.song = Song()
         self.player = Player(self.song)
         self.editor = PatternEditor(song=self.song, player=self.player, id="editor")
-        self.player.set_row_callback(partial(self.call_from_thread, self.player_row_changed))
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=False)
         yield self.editor
         yield Footer()
 
-    def player_row_changed(self):
-        #import threading
-        #self.app.notify(f"{threading.current_thread()}: row={self.player.playback_row}")
-        self.editor.refresh_row(self.player.playback_row)
+    def on_mount(self):
+        self.timer = self.set_interval(1. / 30, self.read_player_queue, pause=True)
+        self.player.start_audio()
+
+    def read_player_queue(self):
+        message = None
+        while True:
+            try:
+                message = self.player.out_queue.get_nowait()
+            except queue.Empty:
+                break
+        #if message is not None:
+        self.editor.refresh_playback_row()
 
     def action_quit(self) -> None:
-        self.player.stop()
+        self.player.stop_audio()
         self.app.exit()
 
     def action_play(self):
-        self.player.start()
-        self.app.notify("Playback started")
+        self.player.play()
+        self.timer.resume()
+        #self.app.notify("Playback started")
 
     def action_stop(self):
-        self.player.stop()
-        self.app.notify("Playback stopped")
+        if self.player.is_playing:
+            self.player.stop()
+            self.timer.pause()
+            self.set_timer(.1, self.editor.refresh)
+        else:
+            self.player.panic()
+        #self.app.notify("Playback stopped")
