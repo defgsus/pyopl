@@ -19,7 +19,7 @@ chip = OPL3Chip(48000)
 chip.write(0xA0, 0x20)
 
 # schedule writes into the future
-# (in this case: execute at one second of rendered audio)
+# (in this case: execute at exactly one second of rendered audio)
 chip.write(0xA0, 0x20, sample=48000)
 
 # use high-level helper
@@ -55,8 +55,8 @@ with AudioStream(chip):
 - [example_beat.py](examples/example_beat.py): Use the OPL3 rhythm mode and schedule register writes into the future, for accurate timing. 
 - [example_multichip.py](examples/example_multichip.py): Use two OPL3Chip instances at the same time to play 36 voices simultaneously.
 - [sound_editor.py](examples/sound_editor.py): Interactively edit all parameters of a single melody channel in 2-op or 4-op mode. Very useful to get to know the OPL3 capabilities.
-- [tracker/](examples/tracker/): A little console tracker for OPL3 rhythms. Allows live editing of patterns and all relevant settings.
-  Run with `python examples/tracker`.
+- [beat_tracker/](examples/beat_tracker/): A little console tracker for OPL3 rhythms. Allows live editing of patterns and all relevant settings.
+  Run with `python examples/beat_tracker`.
 
 
 ## Development
@@ -77,7 +77,7 @@ pip install --force-reinstall dist/*.whl
 python -m unittest discover tests/
 ```
 
-The `src/pyopl/_opl.pyi` file is the source of truth for all `OPL3Chip` annotations and doc-strings.
+The `src/pyopl/_opl3.pyi` file is the source of truth for all `OPL3Chip` annotations and doc-strings.
 They are copied to the c-implementation before building so source code, your IDE 
 and Python's `help(OPL3Chip)` all show the same.
 

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from pyopl import *
 
-from examples.tracker.__main__ import TrackerState, STEPS
+from examples.beat_tracker.__main__ import TrackerState, STEPS
 
 
 @dataclass

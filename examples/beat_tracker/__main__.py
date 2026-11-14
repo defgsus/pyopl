@@ -379,7 +379,7 @@ class FileDialog:
 
 class TrackerUI:
     def __init__(self, stdscr):
-        from examples.tracker.audio import OPL3Engine
+        from examples.beat_tracker.audio import OPL3Engine
         self.stdscr = stdscr
         self.state = make_state()
         self.engine = OPL3Engine(tracker_state=self.state)
