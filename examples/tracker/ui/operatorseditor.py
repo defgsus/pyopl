@@ -102,12 +102,15 @@ class OperatorsEditor(Widget):
                     value = getattr(ch, param_name)
                 if isinstance(value, bool):
                     value = "X" if value else "."
-                segments.append(Segment(f" | ", default_style))
+                segments.append(Segment(
+                    " │ " if y < len(self.param_names) or self.is_channel_column(x) else " ╎ ",
+                    default_style,
+                ))
                 if y < len(self.param_names) or self.is_channel_column(x):
                     segments.append(Segment(f"{value:>3}", cursor_style if is_cursor else default_style))
                 else:
                     segments.append(Segment(f"   ", cursor_style if is_cursor else default_style))
-            segments.append(Segment(f" |", default_style))
+            segments.append(Segment(f" │", default_style))
 
         return Strip(segments)
 

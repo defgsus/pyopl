@@ -1,5 +1,6 @@
 import dataclasses
 
+from src.pyopl import Operator, Channel
 from .pattern import Cell, Pattern
 from .instrument import Instrument
 
@@ -16,7 +17,6 @@ class SongConfig:
 class Song:
 
     def __init__(self, config: SongConfig | None = None):
-        from ..audio import Player
         self.config = config or SongConfig()
         self.patterns: list[Pattern] = [
             Pattern(
@@ -28,12 +28,42 @@ class Song:
             Instrument(name=f"Inst {i+1}")
             for i in range(16)
         ]
-        self.player: Player = Player(self)
 
-        pat_chan = self.patterns[0].channels[0]
+        self.instruments[0].name = "Synth"
+        self.instruments[0].channel_settings[0].feedback = 5
+
+        self.instruments[1].name = "Basedrum"
+        self.instruments[1].type = "BD"
+        self.instruments[1].operators = (
+            Operator(decay=11),
+            Operator(decay=7),
+            Operator(), Operator(),
+        )
+        self.instruments[1].channel_settings = (
+            Channel(fm=True), Channel()
+        )
+
+        self.instruments[2].name = "Snare"
+        self.instruments[2].type = "SD"
+        self.instruments[2].operators = (
+            Operator(decay=8, release=5),
+            Operator(), Operator(), Operator()
+        )
+
+        if 1:
+            pat_chan = self.patterns[0].channels[0]
+            for i in range(pat_chan.length):
+                if i % 4 in (0, 3):
+                    pat_chan.rows[i].note = 48 + (i * 31) % 37
+
+        pat_chan = self.patterns[0].channels[1]
         for i in range(pat_chan.length):
-            if i % 4 in (0, 3):
-                pat_chan.rows[i].note = 48 + (i * 31) % 37
+            if i % 8 in (0, 2):
+                pat_chan.rows[i].note = 36
+                pat_chan.rows[i].instrument = 1
+            if i % 8 in (4, ):
+                pat_chan.rows[i].note = 48
+                pat_chan.rows[i].instrument = 2
 
     @property
     def num_channels(self) -> int:
@@ -46,9 +76,3 @@ class Song:
     @property
     def signature(self) -> tuple[int, int]:
         return self.config.signature
-
-    def play(self):
-        self.player.start()
-
-    def stop(self):
-        self.player.stop()

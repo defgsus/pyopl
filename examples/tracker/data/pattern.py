@@ -25,7 +25,7 @@ class Cell:
 
     @property
     def instrument_text(self) -> str:
-        return ".." if self.instrument is None else f"{self.instrument:03d}"
+        return "..." if self.instrument is None else f"{self.instrument:03d}"
 
     @property
     def volume_text(self) -> str:
@@ -34,6 +34,10 @@ class Cell:
     @property
     def effect_text(self) -> str:
         return "..." if self.effect is None else f"{self.effect:03d}"
+
+    @property
+    def needs_programming(self) -> bool:
+        return self.note is not None
 
 
 class PatternChannel:

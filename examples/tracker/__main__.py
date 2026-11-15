@@ -7,7 +7,8 @@ def test_player():
     import time
     from examples.tracker.audio import Player
     from examples.tracker.data import Song
-    player = Player(Song(), debug=True)
+    song = Song()
+    player = Player(song, debug=True)
     player.start_audio()
     try:
         player.play()

@@ -1,4 +1,7 @@
-from .instrument import Instrument
+from .instrument import (
+    INSTRUMENT_TYPES,
+    Instrument,
+)
 from .pattern import (
     NOTE_NAMES,
     NOTE_OFF,

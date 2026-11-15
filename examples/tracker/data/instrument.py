@@ -7,7 +7,7 @@ INSTRUMENT_TYPES = {
     "2OP": 2,
     "4OP": 4,
     "BD": 2,
-    "SN": 1,
+    "SD": 1,
     "TT": 1,
     "CY": 1,
     "HH": 1,
@@ -17,10 +17,10 @@ INSTRUMENT_TYPES = {
 class Instrument:
     name: str = "Instrument"
     type: Literal["2OP", "4OP", "BD", "SN", "TT", "CY", "HH"] = "2OP"
-    channel_settings: tuple[Channel] = dataclasses.field(
+    channel_settings: tuple[Channel, ...] = dataclasses.field(
         default_factory=lambda : (Channel(), Channel())
     )
-    operators: tuple[Operator] = dataclasses.field(
+    operators: tuple[Operator, ...] = dataclasses.field(
         default_factory=lambda : (Operator(), Operator(), Operator(), Operator())
     )
 
@@ -32,3 +32,6 @@ class Instrument:
     def num_channels(self) -> int:
         return self.num_operators // 2
 
+    @property
+    def is_percussion(self) -> bool:
+        return len(self.type) == 2

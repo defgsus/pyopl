@@ -3,11 +3,27 @@ import threading
 import queue
 import time
 import copy
+import traceback
 
 from pyopl import *
 
 from ..data import Song, Cell, Instrument, NOTE_OFF, Pattern
 
+PERC_CHANNELS = {
+    "BD": 6,
+    "SD": 7,
+    "TT": 8,
+    "CY": -1,
+    "HH": -1,
+}
+
+PERC_OPERATORS = {
+    "BD": (12, 15),
+    "SD": (16, ),
+    "TT": (14, ),
+    "CY": (17, ),
+    "HH": (13, ),
+}
 
 class Player:
 
@@ -33,6 +49,7 @@ class Player:
 
         self._last_programmed_song_row = -1
         self._programmed_instruments: dict[int, int] = {}  # channel idx -> instr idx
+        self._percussion_notes: dict[str, int] = {}
 
     # ---- threadsafe API -----
 
@@ -94,20 +111,24 @@ class Player:
             print("ROW-secs:", secs_per_row)
         lookahead_time = secs_per_row * 5
         lookahead_samples = int(self.chip.sample_rate * lookahead_time)
-        while not self._do_stop:
-            while True:
-                try:
-                    message = self._in_queue.get_nowait()
-                    self.process_input_message(message)
-                except queue.Empty:
-                    break
+        try:
+            while not self._do_stop:
+                while True:
+                    try:
+                        message = self._in_queue.get_nowait()
+                        self.process_input_message(message)
+                    except queue.Empty:
+                        break
 
-            if self._playing:
-                sam = self.row_to_sample(self._last_programmed_song_row)
-                if (sam - self.chip.current_sample) / self.chip.sample_rate < .1:
-                    self.program_chip_playback(lookahead_samples)
+                if self._playing:
+                    sam = self.row_to_sample(self._last_programmed_song_row)
+                    if (sam - self.chip.current_sample) / self.chip.sample_rate < .1:
+                        self.program_chip_playback(lookahead_samples)
 
-            time.sleep(0.01)
+                time.sleep(0.01)
+        except Exception as e:
+            traceback.print_exc()
+            self.out_queue.put_nowait({"exception": f"{type(e).__name__}: {e}"})
 
     def sample_to_row(self, sample: int) -> float:
         sec = sample / self.chip.sample_rate
@@ -144,36 +165,92 @@ class Player:
 
     def program_chip_row(self, song_row: int, pattern_row: int, pattern: Pattern):
         sample = self.row_to_sample(song_row)
-        for channel in pattern.channels:
-            self.program_cell(
-                sample=sample,
-                ch=channel.opl_channel,
-                cell=channel.rows[pattern_row],
-            )
+        self._percussion_notes.clear()
+        for ch, channel in enumerate(pattern.channels):
+            cell = channel.rows[pattern_row]
+            if cell.needs_programming:
+                self.program_cell(
+                    sample=sample,
+                    ch=ch, #channel.opl_channel,
+                    cell=cell,
+                )
+        self.program_percussion_reg(sample)
 
     def program_cell(self, sample: int, ch: int, cell: Cell):
         # prepare instrument
         inst_idx = cell.instrument or 0
-        if self._programmed_instruments.get(ch) != inst_idx:
-            inst = self.song.instruments[inst_idx]
-            self.chip_state.write_channel(ch, inst.channel_settings[0], sample=sample)
-            self.chip_state.write_operators(ch, *inst.operators[:inst.num_operators], sample=sample)
-            self._programmed_instruments[ch] = inst_idx
+        inst = self.song.instruments[inst_idx]
 
-        if cell.note == NOTE_OFF:
-            self.chip_state.note_off(ch, sample=sample + 2)
-        elif cell.note is not None:
-            if self.debug:
-                print(f"note: sample={sample}, cur_sample={self.chip.current_sample}")
-            self.chip_state.note_off(ch, sample=sample + 2)
-            self.chip_state.midi_note_on(ch, cell.note, sample=sample + 4)
+        if inst.is_percussion:
+
+            ch = PERC_CHANNELS.get(inst.type)
+            if self._programmed_instruments.get(ch) != inst_idx:
+                if self.debug:
+                    print(f"PERCU {inst_idx:03d}: write_channel({ch}, {inst.channel_settings[0]}, sample={sample})")
+                self.chip_state.write_channel(ch, inst.channel_settings[0], sample=sample)
+                for i, op_idx in enumerate(PERC_OPERATORS[inst.type]):
+                    if self.debug:
+                        print(f"PERCU {inst_idx:03d}: operator_write({op_idx}, {inst.operators[i]}, sample={sample})")
+                    inst.operators[i].write(self.chip, op_idx, sample=sample)
+                self._programmed_instruments[ch] = inst_idx
+
+            # collect the notes for later
+            if cell.note is not None:
+                self._percussion_notes[inst.type] = cell.note
+
+        else:
+            if self._programmed_instruments.get(ch) != inst_idx:
+                if self.debug:
+                    print(f"INSTR {inst_idx:03d}: write_channel({ch}, {inst.channel_settings[0]}, sample={sample})")
+                self.chip_state.write_channel(ch, inst.channel_settings[0], sample=sample)
+                if inst.num_operators == 4:
+                    if ch < 15:
+                        self.chip_state.write_channel(ch + 3, inst.channel_settings[1], sample=sample)
+
+                # TODO: quickhack for 4OPs
+                num_ops = inst.num_operators
+                if ch not in (0, 1, 2, 9, 10, 11):
+                    num_ops = min(num_ops, 2)
+                if self.debug:
+                    print(f"INSTR {inst_idx:03d}: write_operators({ch}, {inst.operators[:num_ops]}, sample={sample})")
+                self.chip_state.write_operators(ch, *inst.operators[:num_ops], sample=sample)
+                self._programmed_instruments[ch] = inst_idx
+
+            if cell.note == NOTE_OFF:
+                self.chip_state.note_off(ch, sample=sample + 2)
+            elif cell.note is not None:
+                if self.debug:
+                    print(f"note: sample={sample}, cur_sample={self.chip.current_sample}")
+                self.chip_state.note_off(ch, sample=sample + 2)
+                self.chip_state.midi_note_on(ch, cell.note, sample=sample + 4)
+
+    def program_percussion_reg(self, sample: int):
+        # apply collected percussion note-ons
+        if self._percussion_notes:
+            # first send note-off to all
+            self.chip_state.rhythm_on(sample=sample)
+            bits = {}
+            for type, note in self._percussion_notes.items():
+                if note != NOTE_OFF:
+                    bits[type.lower()] = True
+                    perc_ch = PERC_CHANNELS[type]
+                    if perc_ch >= 0:
+                        # set midi-note for perc, but no note-on
+                        self.chip_state.midi_note_on(perc_ch, note, note_on=False, sample=sample + 2)
+            if bits:
+                if self.debug:
+                    print(f"PERC BITS {bits}")
+                self.chip_state.rhythm_on(**bits, sample=sample + 4)
 
     def process_input_message(self, message: dict):
         sample = self.chip.current_sample
 
         if msg := message.get("play_cell"):
             ch, cell = msg
-            self.program_cell(sample, ch, cell)
+            ahead = self.chip.sample_rate // 16
+            self._programmed_instruments.clear()
+            self.program_cell(sample + ahead, ch, cell)
+            self.program_percussion_reg(sample + ahead)
 
         if "play_song" in message:
             self._playing = True

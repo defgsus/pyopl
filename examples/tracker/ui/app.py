@@ -37,18 +37,19 @@ class TrackerApp(App):
 
     def on_mount(self):
         self.query_one("PatternEditor").focus()
-        self.timer = self.set_interval(1. / 30, self.read_player_queue, pause=True)
+        self.timer_play = self.set_interval(1. / 30, self.editor.refresh_playback_row, pause=True)
+        self.timer_queue = self.set_interval(1. / 30, self.read_player_queue, pause=True)
         self.player.start_audio()
 
     def read_player_queue(self):
-        message = None
         while True:
             try:
                 message = self.player.out_queue.get_nowait()
+                if message:
+                    if msg := message.get("exception"):
+                        self.app.notify(msg, severity="error")
             except queue.Empty:
                 break
-        #if message is not None:
-        self.editor.refresh_playback_row()
 
     def action_quit(self) -> None:
         self.player.stop_audio()
@@ -56,13 +57,13 @@ class TrackerApp(App):
 
     def action_play(self):
         self.player.play()
-        self.timer.resume()
+        self.timer_play.resume()
         #self.app.notify("Playback started")
 
     def action_stop(self):
         if self.player.is_playing:
             self.player.stop()
-            self.timer.pause()
+            self.timer_play.pause()
             self.set_timer(.1, self.editor.refresh)
         else:
             self.player.panic()

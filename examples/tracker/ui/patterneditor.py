@@ -14,7 +14,7 @@ from ..audio import Player
 from ..data import NOTE_OFF, Song, SongConfig, Pattern, Cell
 
 
-KEYBOARD_NOTES = "q2w3er5t6z7ui9o0p"
+KEYBOARD_NOTES = "ysxdcvgbhnjmq2w3er5t6z7ui9o0p"
 
 class PatternEditor(Widget):
     can_focus = True
@@ -58,9 +58,9 @@ class PatternEditor(Widget):
         self.player = player
         self.pattern_index = 0
         self.instrument_index = 0
-        self.octave = 4
+        self.octave = 3
 
-        self.column_width = 14      # width of one column incl. separator
+        self.column_width = 15      # width of one column incl. separator
         self.num_fields = 4         # number of fields per pattern cell
         self.field_names = ["note", "inst", "vol", "fx"]
         self.x_padding = 4          # row index col
@@ -78,6 +78,7 @@ class PatternEditor(Widget):
         self.selection_end: tuple[tuple[int, int], int] | None = None
 
         self._last_playback_row: int | None = None
+        self._edit_value = ""       # currently typed in
 
     @property
     def pattern(self) -> Pattern:
@@ -101,7 +102,7 @@ class PatternEditor(Widget):
             f"pat {self.pattern_index:03d}"
             f" | ch {self.cursor_channel + 1}"
             f" | row {self.cursor_row}"
-            f" | field {self.cursor_field}"
+            f" | field {self.field_names[self.cursor_field]}"
             f" | oct {self.octave}"
             #f" | play-row {self.player.playback_row:03d}"
             f" | sel {sel}".ljust(self.size.width)
@@ -403,12 +404,16 @@ class PatternEditor(Widget):
     def on_key(self, event: events.Key) -> None:
         #self.app.notify(f"key {event.key}")
         catched = True
+        edited_value = False
+        # edit note
         if self.cursor_field_name == "note" and event.character and event.character in KEYBOARD_NOTES:
             cell = self.pattern[self.cursor_channel, self.cursor_row]
             note = KEYBOARD_NOTES.index(event.character) + 12 * self.octave
             cell.note = note
             self.action_cursor_down()
             self.player.play_cell(self.cursor_channel, cell)
+
+        # inc/dec note
         elif self.cursor_field_name == "note" and event.character and event.character in "+-":
             cell = self.pattern[self.cursor_channel, self.cursor_row]
             if cell.note is not None and cell.note >= 0:
@@ -419,10 +424,24 @@ class PatternEditor(Widget):
                 self.player.play_cell(self.cursor_channel, cell)
                 self.octave = cell.note // 12
                 self.refresh_pattern_row(status=True)
+
+        # write note-off
         elif self.cursor_field_name == "note" and event.character and event.character in "^1":
-            note = NOTE_OFF
-            self.pattern[self.cursor_channel, self.cursor_row].note = note
+            self.pattern[self.cursor_channel, self.cursor_row].note = NOTE_OFF
             self.action_cursor_down()
+
+        # edit instrument number
+        elif self.cursor_field_name == "inst" and event.character and "0" <= event.character <= "9":
+            cell = self.pattern[self.cursor_channel, self.cursor_row]
+            self._edit_value += event.character
+            edited_value = True
+            cell.instrument = min(
+                int(self._edit_value.lstrip("0") or 0),
+                len(self.song.instruments) - 1,
+            )
+            self.player.play_cell(self.cursor_channel, cell)
+            self.refresh_pattern_row()
+
         elif event.key in ("shift+left", ):
             self.update_selection()
             self.action_cursor_left()
@@ -444,6 +463,9 @@ class PatternEditor(Widget):
 
         if catched:
             event.stop()
+
+        if not edited_value:
+            self._edit_value = ""
 
     def on_mouse_down(self, event: events.MouseDown) -> None:
         o = self.content_offset

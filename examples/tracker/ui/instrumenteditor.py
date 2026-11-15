@@ -1,27 +1,49 @@
 from textual.app import ComposeResult, RenderResult
 from textual.containers import Horizontal, Container, Vertical
-from textual.widgets import ListView, ListItem, Label, Input
+from textual.widgets import ListView, ListItem, Label, Input, Select, Rule
 from textual.widget import Widget
 
-from ..data import NOTE_OFF, Song, SongConfig, Pattern, Cell, Instrument
+from ..data import NOTE_OFF, Song, SongConfig, Pattern, Cell, Instrument, INSTRUMENT_TYPES
 from .operatorseditor import OperatorsEditor
+from .messages import InstrumentsChanged
 
 
 class InstrumentEditor(Container):
     #can_focus = True
+    DEFAULT_CSS = """
+    #instrument-name-input {
+        width: 4fr;
+    }
+    #instrument-type-select {
+        width: 1fr;
+    }
+    """
     def __init__(self, instrument: Instrument, **kwargs):
         super().__init__(**kwargs)
         self.instrument = instrument
 
     def compose(self) -> ComposeResult:
         with Vertical():
-            yield Input(self.instrument.name, id="instrument-name-input")
+            with Horizontal():
+                yield Input(self.instrument.name, id="instrument-name-input")
+                yield Select(
+                    [(t, t) for t in INSTRUMENT_TYPES],
+                    value=self.instrument.type,
+                    id="instrument-type-select"
+                )
             yield OperatorsEditor(self.instrument)
+
+    def on_select_changed(self, message: Select.Changed):
+        if message.select.id == "instrument-type-select":
+            self.instrument.type = message.value
+            self.query_one("OperatorsEditor").set_instrument(self.instrument)
+            self.post_message(InstrumentsChanged())
 
     def set_instrument(self, inst: Instrument):
         self.instrument = inst
-        self.refresh()
+        self.query_one("#instrument-type-select").value = inst.type
         self.query_one("OperatorsEditor").set_instrument(inst)
+        self.refresh()
 
 
 
@@ -46,6 +68,7 @@ class InstrumentsEditor(Container):
     def compose(self) -> ComposeResult:
         with Horizontal():
             yield ListView(id="instruments-list")
+            yield Rule(orientation="vertical")
             yield InstrumentEditor(self.song.instruments[0])
 
     def on_mount(self):
