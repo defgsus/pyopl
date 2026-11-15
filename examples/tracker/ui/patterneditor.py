@@ -125,12 +125,13 @@ class PatternEditor(Widget):
             segments = [
                 Segment("   |", normal_style)
             ]
-            for col in range(self.num_columns_visible()):
-                segments.append(Segment(
-                    f"Ch {col + self.column_offset + 1}".ljust(self.column_width - 1)
-                    + ("|" if col < num_visible_columns - 1 else ""),
-                    header_style,
-                ))
+            for col in range(num_visible_columns):
+                if col + self.column_offset < self.pattern.num_channels:
+                    segments.append(Segment(
+                        f"Ch {col + self.column_offset + 1}".ljust(self.column_width - 1)
+                        + "|",
+                        header_style,
+                    ))
             return Strip(segments)
         elif y == self.size.height - self.scroll_offset.y - self.y_padding:
             return Strip(self.info_bar())
@@ -159,6 +160,8 @@ class PatternEditor(Widget):
         ]
         for col_idx in range(num_visible_columns):
             col = col_idx + self.column_offset
+            if col >= self.pattern.num_channels:
+                break
             cell = self.pattern[col, row]
 
             is_cell_cursor = is_row_cursor and col == self.cursor_channel
@@ -182,14 +185,13 @@ class PatternEditor(Widget):
                 if field < self.num_fields - 1:
                     segments.append(Segment(" ", gap_style))
 
-            if col_idx < num_visible_columns - 1:
-                segments.append(Segment(
-                    "|",
-                    select_style
-                    if is_row_selected and min_max_sel and
-                       min_x_sel <= (col * self.num_fields + self.num_fields - 1) < max_x_sel
-                    else row_style
-                ))
+            segments.append(Segment(
+                "|",
+                select_style
+                if is_row_selected and min_max_sel and
+                   min_x_sel <= (col * self.num_fields + self.num_fields - 1) < max_x_sel
+                else row_style
+            ))
 
         return Strip(segments)
 
@@ -257,14 +259,17 @@ class PatternEditor(Widget):
             min_sel_y, max_sel_y = max_sel_y, min_sel_y
         return min_sel_x, min_sel_y, max_sel_x, max_sel_y
 
-    def num_columns_visible(self) -> int:
-        return (self.scrollable_size.width - self.x_padding) // self.column_width
+    def num_columns_visible(self, include_incomplete: bool = True) -> int:
+        width = self.scrollable_size.width - self.x_padding
+        if include_incomplete:
+            width += self.column_width - 1
+        return min(self.pattern.num_channels - 1, width // self.column_width)
 
     def num_rows_visible(self) -> int:
         return self.scrollable_size.height - self.y_padding - self.y_padding_bottom
 
     def follow_cursor(self):
-        cols = self.num_columns_visible()
+        cols = self.num_columns_visible(include_incomplete=False)
         rows = self.num_rows_visible()
 
         s_x, s_y = self.column_offset, self.row_offset

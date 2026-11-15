@@ -1,5 +1,5 @@
 from textual.app import ComposeResult, RenderResult
-from textual.containers import Horizontal, Container, Vertical
+from textual.containers import Horizontal, Container, Vertical, ScrollableContainer
 from textual.widgets import ListView, ListItem, Label, Input, Select, Rule
 from textual.widget import Widget
 
@@ -17,6 +17,9 @@ class InstrumentEditor(Container):
     #instrument-type-select {
         width: 1fr;
     }
+    #op-container {
+        height: 4fr;
+    }
     """
     def __init__(self, instrument: Instrument, **kwargs):
         super().__init__(**kwargs)
@@ -31,7 +34,8 @@ class InstrumentEditor(Container):
                     value=self.instrument.type,
                     id="instrument-type-select"
                 )
-            yield OperatorsEditor(self.instrument)
+            with ScrollableContainer(id="op-container"):
+                yield OperatorsEditor(self.instrument)
 
     def on_select_changed(self, message: Select.Changed):
         if message.select.id == "instrument-type-select":
