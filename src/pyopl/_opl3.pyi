@@ -56,12 +56,15 @@ class OPL3Chip:
     def current_sample(self) -> int:
         """
         Return the current sample position (in configured sample_rate)
+
         :return: int
         """
 
     def reset(self, sample_rate: int = 49716, opl3: bool = True) -> None:
         """
         Completely reset this chip, similar to creating a new instance.
+
+        NOT THREADSAFE if generate_stream(_into) is called by another thread!
 
         :param sample_rate: The rate at which you want to sample the chip.
             The chip's internal rate is always 49716 Hz.
