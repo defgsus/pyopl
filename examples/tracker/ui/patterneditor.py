@@ -223,23 +223,52 @@ class PatternEditor(Widget):
         self._last_playback_row = row
 
     def update_selection(self):
-        sel = ((self.cursor_channel, self.cursor_field), self.cursor_row)
+        sel_x = (self.cursor_channel, self.cursor_field)
+        sel_y = self.cursor_row
         if self.selection_start is None:
-            self.selection_start = self.selection_end = sel
+            self.selection_start = self.selection_end = (sel_x, sel_y)
         else:
-            #min_sel_x, min_sel_y, max_sel_x, max_sel_y = self.get_min_max_selection()
-            d_start = (
-                abs(sel[0][0] - self.selection_start[0][0])
-                + abs(sel[1] - self.selection_start[1])
-            )
-            d_end = (
-                abs(sel[0][0] - self.selection_end[0][0])
-                + abs(sel[1] - self.selection_end[1])
-            )
-            if d_start <= d_end:
-                self.selection_start = sel
+            # get ordered selection rect
+            min_sel_x, min_sel_y, max_sel_x, max_sel_y = self.get_min_max_selection()
+
+            # convert x coords (col, field) to true x
+            sel_x = sel_x[0] * self.num_fields + sel_x[1]
+            min_sel_x = min_sel_x[0] * self.num_fields + min_sel_x[1]
+            max_sel_x = max_sel_x[0] * self.num_fields + max_sel_x[1]
+
+            # find closest corner of selection
+            corners = [
+                (min_sel_x, min_sel_y), # tl
+                (max_sel_x, min_sel_y), # tr
+                (min_sel_x, max_sel_y), # bl
+                (max_sel_x, max_sel_y), # br
+            ]
+            min_d, min_i = None, None
+            for i, (x, y) in enumerate(corners):
+                d = abs(sel_x - x) + abs(sel_y - y)
+                if min_d is None or d < min_d:
+                    min_d, min_i = d, i
+            self.app.notify(f"corner: {min_i}")
+
+            # convert true x back to (col, field)
+            sel_x = (sel_x // self.num_fields, sel_x % self.num_fields)
+            min_sel_x = (min_sel_x // self.num_fields, min_sel_x % self.num_fields)
+            max_sel_x = (max_sel_x // self.num_fields, max_sel_x % self.num_fields)
+
+            # adjust the closest corner
+            if min_i == 0:
+                self.selection_start = (sel_x, sel_y)
+                self.selection_end = (max_sel_x, max_sel_y)
+            elif min_i == 1:
+                self.selection_start = (min_sel_x, sel_y)
+                self.selection_end = (sel_x, max_sel_y)
+            elif min_i == 2:
+                self.selection_start = (sel_x, min_sel_y)
+                self.selection_end = (max_sel_x, sel_y)
             else:
-                self.selection_end = sel
+                self.selection_start = (min_sel_x, min_sel_y)
+                self.selection_end = (sel_x, sel_y)
+
         self.refresh()
 
     def get_min_max_selection(
@@ -247,8 +276,8 @@ class PatternEditor(Widget):
     ) -> tuple[tuple[int, int], int, tuple[int, int], int] | None:
         if self.selection_start is None or self.selection_end is None:
             return
-        if self.selection_start == self.selection_end:
-            return
+        #if self.selection_start == self.selection_end:
+        #    return
         min_sel_x = self.selection_start[0]     # (col, field)
         max_sel_x = self.selection_end[0]
         min_sel_y = self.selection_start[1]     # row
