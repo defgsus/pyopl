@@ -9,6 +9,7 @@ from pyopl import *
 
 from ..data import Song, Cell, Instrument, NOTE_OFF, Pattern
 
+
 PERC_CHANNELS = {
     "BD": 6,
     "SD": 7,
@@ -47,6 +48,7 @@ class Player:
 
         self._playing = False
 
+        self._start_sample = 0
         self._last_programmed_song_row = -1
         self._programmed_instruments: dict[int, int] = {}  # channel idx -> instr idx
         self._percussion_notes: dict[str, int] = {}
@@ -70,8 +72,12 @@ class Player:
         return self._playing
 
     @property
+    def current_song_sample(self) -> int:
+        return self.chip.current_sample - self._start_sample
+
+    @property
     def playback_row(self) -> int:
-        song_row = self.sample_to_row(self.chip.current_sample)
+        song_row = self.sample_to_row(self.current_song_sample)
         return int(song_row) % 64  # TODO
 
     def play(self):
@@ -122,7 +128,7 @@ class Player:
 
                 if self._playing:
                     sam = self.row_to_sample(self._last_programmed_song_row)
-                    if (sam - self.chip.current_sample) / self.chip.sample_rate < .1:
+                    if (sam - self.current_song_sample) / self.chip.sample_rate < .1:
                         self.program_chip_playback(lookahead_samples)
 
                 time.sleep(0.01)
@@ -145,8 +151,8 @@ class Player:
 
     def program_chip_playback(self, lookahead_samples: int):
         num_rows = int(math.ceil(self.sample_to_row(lookahead_samples)))
-        current_sample = self.chip.current_sample
-        song_row_start = int(self.sample_to_row(current_sample))
+        current_song_sample = self.current_song_sample
+        song_row_start = int(self.sample_to_row(current_song_sample))
 
         if self.debug:
             print(f"row {song_row_start} - {song_row_start + num_rows}")
@@ -164,7 +170,7 @@ class Player:
             self._last_programmed_song_row = song_row
 
     def program_chip_row(self, song_row: int, pattern_row: int, pattern: Pattern):
-        sample = self.row_to_sample(song_row)
+        sample = self.row_to_sample(song_row) + self._start_sample
         self._percussion_notes.clear()
         for ch, channel in enumerate(pattern.channels):
             cell = channel.rows[pattern_row]
@@ -253,8 +259,9 @@ class Player:
             self.program_percussion_reg(sample + ahead)
 
         if "play_song" in message:
+            self.chip.delete_scheduled_writes()
+            self._start_sample = self.chip.current_sample
             self._playing = True
-            self.chip.reset(self.chip.sample_rate)
             self._programmed_instruments.clear()
             self._last_programmed_song_row = -1
 
