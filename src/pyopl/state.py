@@ -82,9 +82,7 @@ class Operator:
     meaning: output_level=63 and sustain=15 are maximum volume
     """
     freq_multiplier: int = 1    # 0 - 15
-    ksr: bool = False
-    tremolo: bool = False
-    vibrato: bool = False
+    waveform: int = 0           # 0 -  7
     output_level: int = 63      # 0 - 63
     key_scale_level: int = 1    # 0 -  3
     attack: int = 15            # 0 - 15
@@ -92,7 +90,9 @@ class Operator:
     sustain: int = 0            # 0 - 15
     release: int = 5            # 0 - 15
     sustain_on: bool = False
-    waveform: int = 0           # 0 -  7
+    ksr: bool = False
+    tremolo: bool = False
+    vibrato: bool = False
 
     def write(self, chip: OPL3Chip, index: int, sample: int = 0):
         """
@@ -231,6 +231,8 @@ class OPL3State:
         self.chip.write(
             0xBD,
             0b100000
+            | (int(tremolo) << 7)
+            | (int(vibrato) << 6)
             | (int(bd) << 4)
             | (int(sd) << 3)
             | (int(tt) << 2)
