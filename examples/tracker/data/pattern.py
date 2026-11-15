@@ -38,7 +38,12 @@ class Cell:
 
 class PatternChannel:
 
-    def __init__(self, length: int = 64):
+    def __init__(
+            self,
+            length: int = 64,
+            opl_channel: int = 0,
+    ):
+        self.opl_channel = opl_channel
         self.rows: list[Cell] = [
             Cell() for _ in range(length)
         ]
@@ -58,8 +63,8 @@ class Pattern:
 
     def __init__(self, channels: int = 8, length: int = 64):
         self.channels: list[PatternChannel] = [
-            PatternChannel(length=length)
-            for _ in range(channels)
+            PatternChannel(length=length, opl_channel=i)
+            for i in range(channels)
         ]
 
     @property

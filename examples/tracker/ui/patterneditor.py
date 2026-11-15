@@ -14,7 +14,7 @@ from ..audio import Player
 from ..data import NOTE_OFF, Song, SongConfig, Pattern, Cell
 
 
-KEYBOARD_NOTES = "q2w3er5t6z7u"
+KEYBOARD_NOTES = "q2w3er5t6z7ui9o0p"
 
 class PatternEditor(Widget):
     can_focus = True
@@ -48,6 +48,7 @@ class PatternEditor(Widget):
         ("ctrl+delete", "delete_row(True)", "Delete row in all channels"),
         ("insert", "insert_row", "Insert row"),
         ("ctrl+insert", "insert_row(True)", "Insert row in all channels"),
+        ("i", "insert_row()", "Insert row"),
         ("I", "insert_row(True)", "Insert row in all channels"),
     ]
 

@@ -25,14 +25,15 @@ class Song:
             )
         ]
         self.instruments: list[Instrument] = [
-            Instrument()
+            Instrument(name=f"Inst {i+1}")
+            for i in range(16)
         ]
         self.player: Player = Player(self)
 
         pat_chan = self.patterns[0].channels[0]
         for i in range(pat_chan.length):
             if i % 4 in (0, 3):
-                pat_chan.rows[i].note = 48 + i % 37
+                pat_chan.rows[i].note = 48 + (i * 31) % 37
 
     @property
     def num_channels(self) -> int:

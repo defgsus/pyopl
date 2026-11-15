@@ -6,7 +6,7 @@ import copy
 
 from pyopl import *
 
-from ..data import Song, Cell, Instrument, NOTE_OFF
+from ..data import Song, Cell, Instrument, NOTE_OFF, Pattern
 
 
 class Player:
@@ -69,6 +69,9 @@ class Player:
     def panic(self):
         """All notes off"""
         self._in_queue.put_nowait({"panic": True})
+
+    def update_instruments(self):
+        self._in_queue.put_nowait({"update_instruments": True})
 
     # ---- internal API ----
 
@@ -136,35 +139,34 @@ class Player:
             pattern_length = pattern.length
             pattern_row = song_row % pattern_length
 
-            row = [
-                chan.rows[pattern_row]
-                for chan in pattern.channels
-            ]
-
-            self.program_chip_row(song_row, row)
+            self.program_chip_row(song_row, pattern_row, pattern)
             self._last_programmed_song_row = song_row
 
-    def program_chip_row(self, row_num: int, row: list[Cell]):
-        sample = self.row_to_sample(row_num)
-        for ch, cell in enumerate(row):
-            self.program_cell(sample, ch, cell)
+    def program_chip_row(self, song_row: int, pattern_row: int, pattern: Pattern):
+        sample = self.row_to_sample(song_row)
+        for channel in pattern.channels:
+            self.program_cell(
+                sample=sample,
+                ch=channel.opl_channel,
+                cell=channel.rows[pattern_row],
+            )
 
-    def program_cell(self, sample, ch: int, cell: Cell):
-            # prepare instrument
-            inst_idx = cell.instrument or 0
-            if self._programmed_instruments.get(ch) != inst_idx:
-                inst = self.song.instruments[inst_idx]
-                self.chip_state.write_channel(ch, inst.channel_settings, sample=sample)
-                self.chip_state.write_operators(ch, *inst.operators, sample=sample)
-                self._programmed_instruments[ch] = inst_idx
+    def program_cell(self, sample: int, ch: int, cell: Cell):
+        # prepare instrument
+        inst_idx = cell.instrument or 0
+        if self._programmed_instruments.get(ch) != inst_idx:
+            inst = self.song.instruments[inst_idx]
+            self.chip_state.write_channel(ch, inst.channel_settings[0], sample=sample)
+            self.chip_state.write_operators(ch, *inst.operators[:inst.num_operators], sample=sample)
+            self._programmed_instruments[ch] = inst_idx
 
-            if cell.note == NOTE_OFF:
-                self.chip_state.note_off(ch, sample=sample + 2)
-            elif cell.note is not None:
-                if self.debug:
-                    print(f"note: sample={sample}, cur_sample={self.chip.current_sample}")
-                self.chip_state.note_off(ch, sample=sample + 2)
-                self.chip_state.midi_note_on(ch, cell.note, sample=sample + 4)
+        if cell.note == NOTE_OFF:
+            self.chip_state.note_off(ch, sample=sample + 2)
+        elif cell.note is not None:
+            if self.debug:
+                print(f"note: sample={sample}, cur_sample={self.chip.current_sample}")
+            self.chip_state.note_off(ch, sample=sample + 2)
+            self.chip_state.midi_note_on(ch, cell.note, sample=sample + 4)
 
     def process_input_message(self, message: dict):
         sample = self.chip.current_sample
@@ -183,3 +185,6 @@ class Player:
             self.chip.delete_scheduled_writes()
             for ch in range(18):
                 self.chip_state.note_off(ch)
+
+        if "update_instruments" in message:
+            self._programmed_instruments.clear()

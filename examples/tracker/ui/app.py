@@ -3,9 +3,10 @@ from functools import partial
 
 from rich.text import Text
 from textual.app import App, ComposeResult
-from textual.widgets import Footer, Header, Static
+from textual.widgets import Footer, Header, Static, TabbedContent
 from textual.widget import Widget
 
+from .instrumenteditor import InstrumentsEditor
 from .patterneditor import PatternEditor
 from ..audio import Player
 from ..data import Song
@@ -28,11 +29,14 @@ class TrackerApp(App):
         self.editor = PatternEditor(song=self.song, player=self.player, id="editor")
 
     def compose(self) -> ComposeResult:
-        yield Header(show_clock=False)
-        yield self.editor
+        # yield Header(show_clock=False)
+        with TabbedContent("patterns", "instruments"):
+            yield self.editor
+            yield InstrumentsEditor(self.song)
         yield Footer()
 
     def on_mount(self):
+        self.query_one("PatternEditor").focus()
         self.timer = self.set_interval(1. / 30, self.read_player_queue, pause=True)
         self.player.start_audio()
 
@@ -63,3 +67,6 @@ class TrackerApp(App):
         else:
             self.player.panic()
         #self.app.notify("Playback stopped")
+
+    def on_instruments_changed(self, message):
+        self.player.update_instruments()
