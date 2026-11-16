@@ -42,6 +42,8 @@ class PatternEditor(Widget):
         ("pagedown", "cursor_page_down", "16 down"),
         ("home", "cursor_home", "Channel start"),
         ("end", "cursor_end", "Channel end"),
+        ("ctrl+c", "copy", "Copy"),
+        ("ctrl+v", "paste", "Paste"),
         ("ctrl+a", "select_all", "Select all"),
         ("ctrl+u", "unselect", "Unselect"),
         (".", "delete_value", "Delete value"),
@@ -87,7 +89,8 @@ class PatternEditor(Widget):
         self.selection_end: tuple[tuple[int, int], int] | None = None
 
         self._last_playback_row: int | None = None
-        self._edit_value = ""       # currently typed in
+        self._edit_value = ""       # currently typed input
+        self._clipboard = None      # (sel, channels[rows[Cell]])
 
     @property
     def pattern(self) -> Pattern:
@@ -262,7 +265,7 @@ class PatternEditor(Widget):
                 d = abs(sel_x - x) + abs(sel_y - y)
                 if min_d is None or d < min_d:
                     min_d, min_i = d, i
-            self.app.notify(f"corner: {min_i}")
+            #self.app.notify(f"corner: {min_i}")
 
             # convert true x back to (col, field)
             sel_x = (sel_x // self.num_fields, sel_x % self.num_fields)
@@ -286,12 +289,13 @@ class PatternEditor(Widget):
         self.refresh()
 
     def get_min_max_selection(
-            self
+            self,
+            include_empty: bool = True,
     ) -> tuple[tuple[int, int], int, tuple[int, int], int] | None:
         if self.selection_start is None or self.selection_end is None:
             return
-        #if self.selection_start == self.selection_end:
-        #    return
+        if self.selection_start == self.selection_end and not include_empty:
+            return
         min_sel_x = self.selection_start[0]     # (col, field)
         max_sel_x = self.selection_end[0]
         min_sel_y = self.selection_start[1]     # row
@@ -406,6 +410,55 @@ class PatternEditor(Widget):
             else:
                 self.cursor_channel = self.pattern.num_channels - 1
         self.follow_cursor()
+        self.refresh()
+
+    def action_copy(self):
+        sel = self.get_min_max_selection(include_empty=False)
+        if not sel:
+            return
+        min_sel_x, min_sel_y, max_sel_x, max_sel_y = sel
+        channels = []
+        for x in range(min_sel_x[0], max_sel_x[0] + 1):
+            cells = []
+            for y in range(min_sel_y, max_sel_y + 1):
+                cells.append(self.pattern[x, y])
+            channels.append(cells)
+        self._clipboard = (sel, channels)
+
+    def action_paste(self):
+        if not self._clipboard:
+            return
+        sel, channels = self._clipboard
+        min_sel_x, min_sel_y, max_sel_x, max_sel_y = sel
+        start_field = min_sel_x[1]
+        end_field = max_sel_x[1]
+        new_pattern = self.pattern.copy()
+        for i in range(max_sel_x[0] - min_sel_x[0] + 1):
+            x = i + self.cursor_channel
+            if x < self.pattern.num_channels:
+                fields = list(range(self.num_fields))
+                if i == 0 and start_field:
+                    for f in range(start_field):
+                        fields.remove(f)
+                if i == max_sel_x[0] - min_sel_x[0] and end_field != self.num_fields - 1:
+                    for f in range(end_field, self.num_fields):
+                        fields.remove(f)
+                for j in range(max_sel_y - min_sel_y + 1):
+                    y = j + self.cursor_row
+                    if y < self.pattern.length:
+                        cell = new_pattern[x, y]
+                        cb_cell = channels[i][j]
+                        for f in fields:
+                            field_name = self.field_names[f]
+                            if field_name == "note":
+                                cell.note = cb_cell.note
+                            elif field_name == "inst":
+                                cell.instrument = cb_cell.instrument
+                            elif field_name == "vol":
+                                cell.volume = cb_cell.volume
+                            elif field_name == "fx":
+                                cell.effect = cb_cell.effect
+        self.pattern.copy_from(new_pattern)
         self.refresh()
 
     def action_select_all(self):

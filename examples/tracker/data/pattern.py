@@ -1,3 +1,4 @@
+import copy
 import dataclasses
 
 
@@ -49,9 +50,7 @@ class PatternChannel:
     def __init__(
             self,
             length: int = 64,
-            opl_channel: int = 0,
     ):
-        self.opl_channel = opl_channel
         self.rows: list[Cell] = [
             Cell() for _ in range(length)
         ]
@@ -71,8 +70,8 @@ class Pattern:
 
     def __init__(self, channels: int = 8, length: int = 64):
         self.channels: list[PatternChannel] = [
-            PatternChannel(length=length, opl_channel=i)
-            for i in range(channels)
+            PatternChannel(length=length)
+            for _ in range(channels)
         ]
 
     @property
@@ -82,6 +81,12 @@ class Pattern:
     @property
     def num_channels(self) -> int:
         return len(self.channels)
+
+    def copy(self) -> "Pattern":
+        return copy.deepcopy(self)
+
+    def copy_from(self, other: "Pattern"):
+        self.channels = copy.deepcopy(other.channels)
 
     def __getitem__(self, channel_row: tuple[int, int]) -> Cell:
         return self.channels[channel_row[0]].rows[channel_row[1]]
