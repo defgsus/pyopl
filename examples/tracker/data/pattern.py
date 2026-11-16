@@ -16,6 +16,10 @@ class Cell:
         return self.note == NOTE_OFF
 
     @property
+    def has_note(self) -> bool:
+        return self.note is not None and self.note >= 0
+
+    @property
     def note_text(self) -> str:
         if self.note is None:
             return "..."

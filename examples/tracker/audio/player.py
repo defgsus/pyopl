@@ -89,6 +89,9 @@ class Player:
     def play_cell(self, channel: int, cell: Cell):
         self._in_queue.put_nowait({"play_cell": (channel, cell)})
 
+    def play_cells(self, cells: list[tuple[int, Cell]]):
+        self._in_queue.put_nowait({"play_cells": cells})
+
     def panic(self):
         """All notes off"""
         self._in_queue.put_nowait({"panic": True})
@@ -251,13 +254,6 @@ class Player:
     def process_input_message(self, message: dict):
         sample = self.chip.current_sample
 
-        if msg := message.get("play_cell"):
-            ch, cell = msg
-            ahead = self.chip.sample_rate // 16
-            self._programmed_instruments.clear()
-            self.program_cell(sample + ahead, ch, cell)
-            self.program_percussion_reg(sample + ahead)
-
         if "play_song" in message:
             self.chip.delete_scheduled_writes()
             self._start_sample = self.chip.current_sample
@@ -272,3 +268,19 @@ class Player:
 
         if "update_instruments" in message:
             self._programmed_instruments.clear()
+
+        if msg := message.get("play_cell"):
+            ch, cell = msg
+            ahead = self.chip.sample_rate // 16
+            self._programmed_instruments.clear()
+            self._percussion_notes.clear()
+            self.program_cell(sample + ahead, ch, cell)
+            self.program_percussion_reg(sample + ahead)
+
+        if msg := message.get("play_cells"):
+            ahead = self.chip.sample_rate // 16
+            for ch, cell in msg:
+                self._programmed_instruments.clear()
+                self._percussion_notes.clear()
+                self.program_cell(sample + ahead, ch, cell)
+                self.program_percussion_reg(sample + ahead)

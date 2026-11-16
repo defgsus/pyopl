@@ -15,6 +15,7 @@ from ..data import NOTE_OFF, Song, SongConfig, Pattern, Cell
 
 
 KEYBOARD_NOTES = "ysxdcvgbhnjmq2w3er5t6z7ui9o0p"
+OCTAVE_KEYS = "0123456789a"
 
 class PatternEditor(Widget):
     can_focus = True
@@ -43,13 +44,17 @@ class PatternEditor(Widget):
         ("end", "cursor_end", "Channel end"),
         ("ctrl+a", "select_all", "Select all"),
         ("ctrl+u", "unselect", "Unselect"),
-        ("backspace", "backspace", "Delete value"),
+        (".", "delete_value", "Delete value"),
         ("delete", "delete_row", "Delete row"),
         ("ctrl+delete", "delete_row(True)", "Delete row in all channels"),
         ("insert", "insert_row", "Insert row"),
         ("ctrl+insert", "insert_row(True)", "Insert row in all channels"),
         ("i", "insert_row()", "Insert row"),
         ("I", "insert_row(True)", "Insert row in all channels"),
+        ("<", "incdec(-1)", "Decrease"),
+        (">", "incdec(1)", "Increase"),
+        ("4", "play_row(False)", "Play cell"),
+        ("8", "play_row(True)", "Play row"),
     ]
 
     def __init__(self, song: Song, player: Player, **kwargs):
@@ -62,14 +67,18 @@ class PatternEditor(Widget):
 
         self.column_width = 15      # width of one column incl. separator
         self.num_fields = 4         # number of fields per pattern cell
+        self.num_sub_fields = [     # sub-fields per field
+            2, 1, 1, 1
+        ]
         self.field_names = ["note", "inst", "vol", "fx"]
         self.x_padding = 4          # row index col
         self.y_padding = 1          # channel header
-        self.y_padding_bottom = 1         # bottom row
+        self.y_padding_bottom = 1   # bottom row
 
         self.cursor_channel = 0
         self.cursor_row = 0
         self.cursor_field = 0
+        self.cursor_sub_field = 0
 
         self.column_offset = 0      # first viewed channel
         self.row_offset = 0         # first viewed row
@@ -166,9 +175,13 @@ class PatternEditor(Widget):
 
             is_cell_cursor = is_row_cursor and col == self.cursor_channel
 
-            for field, text in enumerate([
-                    cell.note_text, cell.instrument_text, cell.volume_text, cell.effect_text
-            ]):
+            for field, sub_field, text in (
+                    (0, 0, cell.note_text[:2]),
+                    (0, 1, cell.note_text[2:]),
+                    (1, 0, cell.instrument_text),
+                    (2, 0, cell.volume_text),
+                    (3, 0, cell.effect_text),
+            ):
                 x = col * self.num_fields + field
                 field_style = row_style
                 gap_style = row_style
@@ -178,11 +191,12 @@ class PatternEditor(Widget):
                             field_style = select_style
                     if min_x_sel <= x < max_x_sel:
                         gap_style = select_style
-                if is_cell_cursor and self.cursor_field == field:
+
+                if is_cell_cursor and self.cursor_field == field and self.cursor_sub_field == sub_field:
                     field_style = cursor_select_style if field_style == select_style else cursor_style
 
                 segments.append(Segment(text, field_style))
-                if field < self.num_fields - 1:
+                if field < self.num_fields - 1 and sub_field == self.num_sub_fields[field] - 1:
                     segments.append(Segment(" ", gap_style))
 
             segments.append(Segment(
@@ -317,24 +331,30 @@ class PatternEditor(Widget):
             self.refresh()
 
     def action_cursor_left(self):
-        self.cursor_field -= 1
-        if self.cursor_field < 0:
-            if self.cursor_channel == 0:
-                self.cursor_field = 0
-            else:
-                self.cursor_field = self.num_fields - 1
-                self.cursor_channel = max(self.cursor_channel - 1, 0)
+        self.cursor_sub_field -= 1
+        if self.cursor_sub_field < 0:
+            self.cursor_field -= 1
+            if self.cursor_field < 0:
+                if self.cursor_channel == 0:
+                    self.cursor_field = 0
+                else:
+                    self.cursor_field = self.num_fields - 1
+                    self.cursor_channel = max(self.cursor_channel - 1, 0)
+            self.cursor_sub_field = self.num_sub_fields[self.cursor_field] - 1
         self.follow_cursor()
         self.refresh()
 
     def action_cursor_right(self):
-        self.cursor_field += 1
-        if self.cursor_field >= self.num_fields:
-            if self.cursor_channel == self.pattern.num_channels - 1:
-                self.cursor_field = self.num_fields - 1
-            else:
-                self.cursor_field = 0
-                self.cursor_channel = min(self.cursor_channel + 1, self.pattern.num_channels - 1)
+        self.cursor_sub_field += 1
+        if self.cursor_sub_field >= self.num_sub_fields[self.cursor_field]:
+            self.cursor_field += 1
+            if self.cursor_field >= self.num_fields:
+                if self.cursor_channel == self.pattern.num_channels - 1:
+                    self.cursor_field = self.num_fields - 1
+                else:
+                    self.cursor_field = 0
+                    self.cursor_channel = min(self.cursor_channel + 1, self.pattern.num_channels - 1)
+            self.cursor_sub_field = 0
         self.follow_cursor()
         self.refresh()
 
@@ -365,8 +385,9 @@ class PatternEditor(Widget):
         self.action_cursor_down(16)
 
     def action_cursor_home(self):
-        if self.cursor_field > 0:
+        if self.cursor_field > 0 or self.cursor_sub_field > 0:
             self.cursor_field = 0
+            self.cursor_sub_field = 0
         else:
             if self.cursor_channel == 0:
                 self.cursor_row = 0
@@ -376,8 +397,9 @@ class PatternEditor(Widget):
         self.refresh()
 
     def action_cursor_end(self):
-        if self.cursor_field < self.num_fields - 1:
+        if self.cursor_field < self.num_fields - 1 or self.num_sub_fields[self.cursor_field] - 1:
             self.cursor_field = self.num_fields - 1
+            self.cursor_sub_field = self.num_sub_fields[self.cursor_field] - 1
         else:
             if self.cursor_channel == self.pattern.num_channels - 1:
                 self.cursor_row = self.pattern.length - 1
@@ -394,6 +416,16 @@ class PatternEditor(Widget):
             self.selection_end = ((self.cursor_channel, self.num_fields - 1), row_start + 15)
         else:
             min_sel_x, min_sel_y, max_sel_x, max_sel_y = self.get_min_max_selection()
+
+            # if not inside selection, start new select
+            if not (
+                    min_sel_x[0] <= self.cursor_channel <= max_sel_x[0]
+                and min_sel_y <= self.cursor_row <= max_sel_y
+            ):
+                self.selection_start = None
+                self.action_select_all()
+                return
+
             # expand current channel to full
             if (
                     min_sel_x[0] == self.cursor_channel and max_sel_x[0] == self.cursor_channel
@@ -421,9 +453,15 @@ class PatternEditor(Widget):
         self.selection_start = self.selection_end = None
         self.refresh()
 
-    def action_backspace(self):
+    def action_delete_value(self):
         if self.cursor_field_name == "note":
             self.pattern[self.cursor_channel, self.cursor_row].note = None
+        elif self.cursor_field_name == "inst":
+            self.pattern[self.cursor_channel, self.cursor_row].instrument = None
+        elif self.cursor_field_name == "vol":
+            self.pattern[self.cursor_channel, self.cursor_row].volume = None
+        elif self.cursor_field_name == "fx":
+            self.pattern[self.cursor_channel, self.cursor_row].effect = None
 
         self.refresh()
 
@@ -434,30 +472,96 @@ class PatternEditor(Widget):
     def action_insert_row(self, all_channels: bool = False):
         self.pattern.insert_row(self.cursor_row, None if all_channels else self.cursor_channel)
         self.refresh()
+    
+    def selected_cells(self, field: int = 0) -> list[tuple[int, int, Cell]]:
+        sel = self.get_min_max_selection()
+        if not sel:
+            return []
+        cells = []
+        for x in range(sel[0][0], sel[2][0] + 1):
+            if x == sel[0][0] and sel[0][1] > field:
+                continue
+            if x == sel[2][0] and sel[2][1] < field:
+                continue
+            for y in range(sel[1], sel[3] + 1):
+                cells.append((x, y, self.pattern[x, y]))
+        return cells
+    
+    def action_incdec(self, dir: int):
+        cell = self.pattern[self.cursor_channel, self.cursor_row]
+        handled = False
+        if self.cursor_field_name == "note":
+            if cells := self.selected_cells():
+                orig_cell = cell
+                for _, _, cell in cells:
+                    if cell.has_note:
+                        if self.cursor_sub_field == 0:
+                            cell.note = max(0, min(127, cell.note + dir))
+                            self.octave = cell.note // 12
+                        else:
+                            oct = cell.note // 12
+                            oct = max(0, min(10, oct + dir))
+                            cell.note = max(0, min(127, cell.note % 12 + oct * 12))
+                self.refresh()
+                if orig_cell.has_note:
+                    self.player.play_cell(self.cursor_channel, cell)
+
+            else:
+                if cell.has_note:
+                    handled = True
+                    if self.cursor_sub_field == 0:
+                        cell.note = max(0, min(127, cell.note + dir))
+                        self.octave = cell.note // 12
+                    else:
+                        oct = cell.note // 12
+                        oct = max(0, min(10, oct + dir))
+                        cell.note = max(0, min(127, cell.note % 12 + oct * 12))
+                        self.octave = oct
+
+        if handled:
+            self.player.play_cell(self.cursor_channel, cell)
+            self.refresh_pattern_row(status=True)
+
+    def action_play_row(self, full_row: bool = True):
+        if not full_row:
+            cell = self.pattern[self.cursor_channel, self.cursor_row]
+            if cell.has_note:
+                self.player.play_cell(self.cursor_channel, cell)
+        else:
+            cells = []
+            for ch in range(self.pattern.num_channels):
+                cell = self.pattern[ch, self.cursor_row]
+                if cell.has_note:
+                    cells.append((ch, cell))
+            self.player.play_cells(cells)
+        self.action_cursor_down()
 
     def on_key(self, event: events.Key) -> None:
         #self.app.notify(f"key {event.key}")
         catched = True
         edited_value = False
         # edit note
-        if self.cursor_field_name == "note" and event.character and event.character in KEYBOARD_NOTES:
+        if (
+                self.cursor_field_name == "note" and self.cursor_sub_field == 0
+                and event.character and event.character in KEYBOARD_NOTES
+        ):
             cell = self.pattern[self.cursor_channel, self.cursor_row]
             note = KEYBOARD_NOTES.index(event.character) + 12 * self.octave
             cell.note = note
             self.action_cursor_down()
             self.player.play_cell(self.cursor_channel, cell)
 
-        # inc/dec note
-        elif self.cursor_field_name == "note" and event.character and event.character in "+-":
+        # edit octave
+        if (
+                self.cursor_field_name == "note" and self.cursor_sub_field == 1
+                and event.character and event.character in OCTAVE_KEYS
+        ):
             cell = self.pattern[self.cursor_channel, self.cursor_row]
-            if cell.note is not None and cell.note >= 0:
-                if event.character == "+" and cell.note < 127 - 12:
-                    cell.note += 12
-                elif event.character == "-" and cell.note >= 12:
-                    cell.note -= 12
-                self.player.play_cell(self.cursor_channel, cell)
-                self.octave = cell.note // 12
-                self.refresh_pattern_row(status=True)
+            oct = OCTAVE_KEYS.index(event.character)
+            cell.note = min(127, cell.note % 12 + oct * 12)
+            self.octave = oct
+            self.action_cursor_down()
+            self.player.play_cell(self.cursor_channel, cell)
 
         # write note-off
         elif self.cursor_field_name == "note" and event.character and event.character in "^1":
@@ -469,10 +573,11 @@ class PatternEditor(Widget):
             cell = self.pattern[self.cursor_channel, self.cursor_row]
             self._edit_value += event.character
             edited_value = True
-            cell.instrument = min(
-                int(self._edit_value.lstrip("0") or 0),
-                len(self.song.instruments) - 1,
-            )
+            num = int(self._edit_value.lstrip("0") or 0)
+            if num >= len(self.song.instruments):
+                num = len(self.song.instruments) - 1
+                self._edit_value = ""
+            cell.instrument = num
             self.player.play_cell(self.cursor_channel, cell)
             self.refresh_pattern_row()
 
