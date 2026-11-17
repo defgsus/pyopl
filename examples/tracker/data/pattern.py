@@ -30,7 +30,7 @@ class Cell:
 
     @property
     def instrument_text(self) -> str:
-        return "..." if self.instrument is None else f"{self.instrument:03d}"
+        return ".." if self.instrument is None else f"{self.instrument:02d}"
 
     @property
     def volume_text(self) -> str:
@@ -50,7 +50,9 @@ class PatternChannel:
     def __init__(
             self,
             length: int = 64,
+            num_voices: int = 1,
     ):
+        self.num_voices = num_voices
         self.rows: list[Cell] = [
             Cell() for _ in range(length)
         ]

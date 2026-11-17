@@ -43,14 +43,21 @@ class Song:
             Channel(fm=True), Channel()
         )
 
-        self.instruments[2].name = "Snare"
-        self.instruments[2].type = "SD"
-        self.instruments[2].operators = (
-            Operator(decay=8, release=5),
-            Operator(), Operator(), Operator()
-        )
+        for i, name, type in (
+                (2, "Snare", "SD"),
+                (3, "Tom", "TT"),
+                (4, "Cymbal", "CY"),
+                (5, "HiHat", "HH"),
+        ):
+            self.instruments[i].name = name
+            self.instruments[i].type = type
+            self.instruments[i].operators = (
+                Operator(decay=8, release=5),
+                Operator(), Operator(), Operator()
+            )
 
-        if 1:
+
+        if 0:
             pat_chan = self.patterns[0].channels[0]
             for i in range(pat_chan.length):
                 if i % 4 in (0, 3):
@@ -64,6 +71,18 @@ class Song:
             if i % 8 in (4, ):
                 pat_chan.rows[i].note = 48
                 pat_chan.rows[i].instrument = 2
+            if i % 16 in (13, ):
+                pat_chan.rows[i].note = 60
+                pat_chan.rows[i].instrument = 3
+
+        pat_chan = self.patterns[0].channels[2]
+        for i in range(pat_chan.length):
+            if i % 8 in (0, ):
+                pat_chan.rows[i].note = 50
+                pat_chan.rows[i].instrument = 4
+            if i % 8 in (2, 4, 6):
+                pat_chan.rows[i].note = 60
+                pat_chan.rows[i].instrument = 5
 
     @property
     def num_channels(self) -> int:
