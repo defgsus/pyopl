@@ -1,4 +1,5 @@
 import dataclasses
+from typing import Literal
 
 from src.pyopl import Operator, Channel
 from .pattern import Cell, Pattern
@@ -6,10 +7,18 @@ from .instrument import Instrument
 
 
 @dataclasses.dataclass
+class ChannelConfig:
+    polyphony: int = 1
+    type: Literal["2OP", "4OP", "PERC"] = "2OP"
+
+
+@dataclasses.dataclass
 class SongConfig:
     default_pattern_length: int = 64
-    channels: int = 16
-    name: str = "new song"
+    channels: list[ChannelConfig] = dataclasses.field(default_factory=lambda: [
+        ChannelConfig() for _ in range(16)
+    ])
+    name: str = "song"
     bpm: int = 120
     signature: tuple[int, int] = (4, 4)
 
@@ -20,7 +29,7 @@ class Song:
         self.config = config or SongConfig()
         self.patterns: list[Pattern] = [
             Pattern(
-                channels=self.config.channels,
+                channels=len(self.config.channels),
                 length=self.config.default_pattern_length
             )
         ]
@@ -29,6 +38,23 @@ class Song:
             for i in range(16)
         ]
 
+    @property
+    def num_channels(self) -> int:
+        return len(self.config.channels)
+
+    @property
+    def channel_configs(self) -> list[ChannelConfig]:
+        return self.config.channels
+
+    @property
+    def bpm(self) -> int:
+        return self.config.bpm
+
+    @property
+    def signature(self) -> tuple[int, int]:
+        return self.config.signature
+
+    def make_demo_song(self):
         self.instruments[0].name = "Synth"
         self.instruments[0].channel_settings[0].feedback = 5
 
@@ -83,15 +109,3 @@ class Song:
             if i % 8 in (2, 4, 6):
                 pat_chan.rows[i].note = 60
                 pat_chan.rows[i].instrument = 5
-
-    @property
-    def num_channels(self) -> int:
-        return self.config.channels
-
-    @property
-    def bpm(self) -> int:
-        return self.config.bpm
-
-    @property
-    def signature(self) -> tuple[int, int]:
-        return self.config.signature

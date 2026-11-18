@@ -42,7 +42,7 @@ class Cell:
 
     @property
     def needs_programming(self) -> bool:
-        return self.note is not None
+        return self.note is not None or self.volume is not None
 
 
 class PatternChannel:

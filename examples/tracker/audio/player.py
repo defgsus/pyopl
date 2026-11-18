@@ -2,29 +2,13 @@ import math
 import threading
 import queue
 import time
-import copy
 import traceback
 
 from pyopl import *
 
-from ..data import Song, Cell, Instrument, NOTE_OFF, Pattern
+from ..data import Song, Cell, Pattern
+from .opl3pool import OPL3Pool
 
-
-PERC_CHANNELS = {
-    "BD": 6,
-    "SD": 7,
-    "TT": 8,
-    "CY": -1,
-    "HH": -1,
-}
-
-PERC_OPERATORS = {
-    "BD": (12, 15),
-    "SD": (16, ),
-    "TT": (14, ),
-    "CY": (17, ),
-    "HH": (13, ),
-}
 
 class Player:
 
@@ -35,13 +19,14 @@ class Player:
             debug: bool = False,
     ):
         self.song = song
+        self.sample_rate = sample_rate
         self.debug = debug
+        self.pool = OPL3Pool(self.sample_rate, self.song, debug=self.debug)
+
         self._in_queue = queue.Queue()
         self.out_queue = queue.Queue()
 
-        self.chip = OPL3Chip(sample_rate)
-        self.chip_state = OPL3State(self.chip)
-        self.stream = AudioStream(self.chip)
+        self.stream = AudioStream(*self.pool.chips)
         self.thread: threading.Thread | None = None
         self._do_stop = False
         self.song_lock = threading.Lock()
@@ -50,7 +35,6 @@ class Player:
 
         self._start_sample = 0
         self._last_programmed_song_row = -1
-        self._programmed_instruments: dict[int, int] = {}  # channel idx -> instr idx
         self._percussion_notes: dict[str, int] = {}
 
     # ---- threadsafe API -----
@@ -73,7 +57,11 @@ class Player:
 
     @property
     def current_song_sample(self) -> int:
-        return self.chip.current_sample - self._start_sample
+        return self.pool.current_sample - self._start_sample
+
+    @property
+    def current_song_row(self) -> int:
+        return int(self.sample_to_row(self.current_song_sample))
 
     @property
     def playback_row(self) -> int:
@@ -115,11 +103,11 @@ class Player:
             self.thread = None
 
     def _thread_main_loop(self):
-        secs_per_row = self.row_to_sample(1) / self.chip.sample_rate
+        secs_per_row = self.row_to_sample(1) / self.sample_rate
         if self.debug:
             print("ROW-secs:", secs_per_row)
         lookahead_time = secs_per_row * 5
-        lookahead_samples = int(self.chip.sample_rate * lookahead_time)
+        lookahead_samples = int(self.sample_rate * lookahead_time)
         try:
             while not self._do_stop:
                 while True:
@@ -131,8 +119,8 @@ class Player:
 
                 if self._playing:
                     sam = self.row_to_sample(self._last_programmed_song_row)
-                    if (sam - self.current_song_sample) / self.chip.sample_rate < .1:
-                        self.program_chip_playback(lookahead_samples)
+                    if (sam - self.current_song_sample) / self.sample_rate < .1:
+                        self._program_chip_playback(lookahead_samples)
 
                 time.sleep(0.01)
         except Exception as e:
@@ -140,7 +128,7 @@ class Player:
             self.out_queue.put_nowait({"exception": f"{type(e).__name__}: {e}"})
 
     def sample_to_row(self, sample: int) -> float:
-        sec = sample / self.chip.sample_rate
+        sec = sample / self.sample_rate
         beat = 4 * self.song.bpm / 60 * sec
         sig = self.song.signature
         row = beat * sig[0] / sig[1]
@@ -150,9 +138,9 @@ class Player:
         sig = self.song.signature
         beat = row / sig[0] * sig[1]
         sec = beat / (self.song.bpm / 60 * 4)
-        return int(sec * self.chip.sample_rate)
+        return int(sec * self.sample_rate)
 
-    def program_chip_playback(self, lookahead_samples: int):
+    def _program_chip_playback(self, lookahead_samples: int):
         num_rows = int(math.ceil(self.sample_to_row(lookahead_samples)))
         current_song_sample = self.current_song_sample
         song_row_start = int(self.sample_to_row(current_song_sample))
@@ -169,118 +157,49 @@ class Player:
             pattern_length = pattern.length
             pattern_row = song_row % pattern_length
 
-            self.program_chip_row(song_row, pattern_row, pattern)
+            self._program_chip_row(song_row, pattern_row, pattern)
             self._last_programmed_song_row = song_row
 
-    def program_chip_row(self, song_row: int, pattern_row: int, pattern: Pattern):
+    def _program_chip_row(self, song_row: int, pattern_row: int, pattern: Pattern):
         sample = self.row_to_sample(song_row) + self._start_sample
-        self._percussion_notes.clear()
+        self.pool.start_program_row(sample)
         for ch, channel in enumerate(pattern.channels):
             cell = channel.rows[pattern_row]
             if cell.needs_programming:
-                self.program_cell(
-                    sample=sample,
-                    ch=ch, #channel.opl_channel,
+                self.pool.program_cell(
+                    tracker_channel=ch,
                     cell=cell,
+                    sample=sample + 2,
                 )
-        self.program_percussion_reg(sample)
-
-    def program_cell(self, sample: int, ch: int, cell: Cell):
-        # prepare instrument
-        inst_idx = cell.instrument or 0
-        inst = self.song.instruments[inst_idx]
-
-        if inst.is_percussion:
-
-            ch = PERC_CHANNELS.get(inst.type)
-            if self._programmed_instruments.get(ch) != inst_idx:
-                if self.debug:
-                    print(f"PERCU {inst_idx:03d}: write_channel({ch}, {inst.channel_settings[0]}, sample={sample})")
-                self.chip_state.write_channel(ch, inst.channel_settings[0], sample=sample)
-                for i, op_idx in enumerate(PERC_OPERATORS[inst.type]):
-                    if self.debug:
-                        print(f"PERCU {inst_idx:03d}: operator_write({op_idx}, {inst.operators[i]}, sample={sample})")
-                    inst.operators[i].write(self.chip, op_idx, sample=sample)
-                self._programmed_instruments[ch] = inst_idx
-
-            # collect the notes for later
-            if cell.note is not None:
-                self._percussion_notes[inst.type] = cell.note
-
-        else:
-            if self._programmed_instruments.get(ch) != inst_idx:
-                if self.debug:
-                    print(f"INSTR {inst_idx:03d}: write_channel({ch}, {inst.channel_settings[0]}, sample={sample})")
-                self.chip_state.write_channel(ch, inst.channel_settings[0], sample=sample)
-                if inst.num_operators == 4:
-                    if ch < 15:
-                        self.chip_state.write_channel(ch + 3, inst.channel_settings[1], sample=sample)
-
-                # TODO: quickhack for 4OPs
-                num_ops = inst.num_operators
-                if ch not in (0, 1, 2, 9, 10, 11):
-                    num_ops = min(num_ops, 2)
-                if self.debug:
-                    print(f"INSTR {inst_idx:03d}: write_operators({ch}, {inst.operators[:num_ops]}, sample={sample})")
-                self.chip_state.write_operators(ch, *inst.operators[:num_ops], sample=sample)
-                self._programmed_instruments[ch] = inst_idx
-
-            if cell.note == NOTE_OFF:
-                self.chip_state.note_off(ch, sample=sample + 2)
-            elif cell.note is not None:
-                if self.debug:
-                    print(f"note: sample={sample}, cur_sample={self.chip.current_sample}")
-                self.chip_state.note_off(ch, sample=sample + 2)
-                self.chip_state.midi_note_on(ch, cell.note, sample=sample + 4)
-
-    def program_percussion_reg(self, sample: int):
-        # apply collected percussion note-ons
-        if self._percussion_notes:
-            # first send note-off to all
-            self.chip_state.rhythm_on(sample=sample)
-            bits = {}
-            for type, note in self._percussion_notes.items():
-                if note != NOTE_OFF:
-                    bits[type.lower()] = True
-                    perc_ch = PERC_CHANNELS[type]
-                    if perc_ch >= 0:
-                        # set midi-note for perc, but no note-on
-                        self.chip_state.midi_note_on(perc_ch, note, note_on=False, sample=sample + 2)
-            if bits:
-                if self.debug:
-                    print(f"PERC BITS {bits}")
-                self.chip_state.rhythm_on(**bits, sample=sample + 4)
+        self.pool.end_program_row(sample + 4)
 
     def process_input_message(self, message: dict):
-        sample = self.chip.current_sample
+        sample = self.pool.current_sample
 
         if "play_song" in message:
-            self.chip.delete_scheduled_writes()
-            self._start_sample = self.chip.current_sample
-            self._playing = True
-            self._programmed_instruments.clear()
+            self.pool.initialize()
+            self._start_sample = sample
             self._last_programmed_song_row = -1
+            self._playing = True
 
         if "panic" in message:
-            self.chip.delete_scheduled_writes()
-            for ch in range(18):
-                self.chip_state.note_off(ch)
+            self.pool.delete_scheduled_writes()
+            self.pool.all_notes_off()
 
         if "update_instruments" in message:
-            self._programmed_instruments.clear()
+            self.pool._programmed_instrument_per_chipchan.clear()
 
         if msg := message.get("play_cell"):
             ch, cell = msg
-            ahead = self.chip.sample_rate // 16
-            self._programmed_instruments.clear()
-            self._percussion_notes.clear()
-            self.program_cell(sample + ahead, ch, cell)
-            self.program_percussion_reg(sample + ahead)
+            ahead = self.sample_rate // 16
+            self.pool.start_program_row(sample + ahead)
+            self.pool.program_cell(ch, cell, sample + ahead + 2)
+            self.pool.end_program_row(sample + ahead + 4)
 
         if msg := message.get("play_cells"):
-            ahead = self.chip.sample_rate // 16
+            ahead = self.sample_rate // 16
             for ch, cell in msg:
-                self._programmed_instruments.clear()
-                self._percussion_notes.clear()
-                self.program_cell(sample + ahead, ch, cell)
-                self.program_percussion_reg(sample + ahead)
+                self.pool.start_program_row(sample + ahead)
+                self.pool.program_cell(ch, cell, sample + ahead + 2)
+                self.pool.end_program_row(sample + ahead + 4)
+

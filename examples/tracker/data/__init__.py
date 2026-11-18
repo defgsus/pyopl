@@ -7,4 +7,8 @@ from .pattern import (
     NOTE_OFF,
     Cell, PatternChannel, Pattern,
 )
-from .song import SongConfig, Song
+from .song import (
+    ChannelConfig,
+    SongConfig,
+    Song,
+)
