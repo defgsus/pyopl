@@ -22,9 +22,9 @@ class TrackerApp(App):
         ("f8", "stop", "Stop playback"),
     ]
 
-    def __init__(self):
+    def __init__(self, song: Song):
         super().__init__()
-        self.song = Song()
+        self.song = song
         self.player = Player(self.song)
         self.editor = PatternEditor(song=self.song, player=self.player, id="editor")
 

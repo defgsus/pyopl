@@ -83,7 +83,7 @@ class Song:
             )
 
 
-        if 0:
+        if 1:
             pat_chan = self.patterns[0].channels[0]
             for i in range(pat_chan.length):
                 if i % 4 in (0, 3):

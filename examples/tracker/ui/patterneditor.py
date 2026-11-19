@@ -312,7 +312,7 @@ class PatternEditor(Widget):
         width = self.scrollable_size.width - self.x_padding
         if include_incomplete:
             width += self.column_width - 1
-        return min(self.pattern.num_channels - 1, width // self.column_width)
+        return min(self.pattern.num_channels, width // self.column_width)
 
     def num_rows_visible(self) -> int:
         return self.scrollable_size.height - self.y_padding - self.y_padding_bottom
